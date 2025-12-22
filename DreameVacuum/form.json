@@ -1,28 +1,72 @@
 {
-  "elements": [
-    { "type": "Label", "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud (wie HACS dreame-vacuum)." },
-    { "type": "ValidationTextBox", "name": "Region", "caption": "Region (z.B. eu)" },
-    {
-      "type": "Select",
-      "name": "AccountType",
-      "caption": "Account Type",
-      "options": [
-        { "caption": "dreame", "value": "dreame" },
-        { "caption": "mova", "value": "mova" },
-        { "caption": "trouver", "value": "trouver" }
-      ]
-    },
-    { "type": "ValidationTextBox", "name": "DID", "caption": "Device ID (did)" },
-    { "type": "ValidationTextBox", "name": "Host", "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)" },
-    { "type": "ValidationTextBox", "name": "RefreshToken", "caption": "RefreshToken (aus HA: auth_key) – empfohlen" },
-    { "type": "ValidationTextBox", "name": "Username", "caption": "Username (Fallback)" },
-    { "type": "PasswordTextBox", "name": "Password", "caption": "Password (Fallback)" },
-    { "type": "ValidationTextBox", "name": "AuthHeader", "caption": "AuthHeader (optional, Default ist Basic dreame_appv1:dreame_appv1)" },
-    { "type": "NumberSpinner", "name": "PollInterval", "caption": "Polling (Sek.)", "minimum": 10, "maximum": 3600 }
-  ],
-  "actions": [
-    { "type": "Button", "caption": "Login testen", "onClick": "DRMV_TestLogin($id);" },
-    { "type": "Button", "caption": "Geräteinfos aktualisieren", "onClick": "DRMV_UpdateDeviceInfo($id);" },
-    { "type": "Button", "caption": "Raw: device/info", "onClick": "DRMV_DebugDeviceInfo($id);" }
-  ]
+    "elements": [
+        {
+            "type": "Label",
+            "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud (wie HACS dreame-vacuum)."
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Region",
+            "caption": "Region (z.B. eu)"
+        },
+        {
+            "type": "Select",
+            "name": "AccountType",
+            "caption": "Account Type",
+            "options": [
+                { "caption": "dreame", "value": "dreame" },
+                { "caption": "mova", "value": "mova" },
+                { "caption": "trouver", "value": "trouver" }
+            ]
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "DID",
+            "caption": "Device ID (did)"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Host",
+            "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "RefreshToken",
+            "caption": "RefreshToken (aus HA: auth_key) – empfohlen"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Username",
+            "caption": "Username (Fallback)"
+        },
+        {
+            "type": "PasswordTextBox",
+            "name": "Password",
+            "caption": "Password (Fallback)"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "PollInterval",
+            "caption": "Polling (Sek.)",
+            "minimum": 10,
+            "maximum": 3600
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "caption": "Login testen",
+            "onClick": "DRMV_TestLogin($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Ger\u00e4teinfos aktualisieren",
+            "onClick": "DRMV_UpdateDeviceInfo($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Raw: device/info",
+            "onClick": "DRMV_DebugDeviceInfo($id);"
+        }
+    ]
 }
