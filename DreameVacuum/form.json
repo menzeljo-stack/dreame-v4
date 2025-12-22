@@ -1,72 +1,65 @@
 {
-    "elements": [
-        {
-            "type": "Label",
-            "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud (wie HACS dreame-vacuum)."
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "Region",
-            "caption": "Region (z.B. eu)"
-        },
-        {
-            "type": "Select",
-            "name": "AccountType",
-            "caption": "Account Type",
-            "options": [
-                { "caption": "dreame", "value": "dreame" },
-                { "caption": "mova", "value": "mova" },
-                { "caption": "trouver", "value": "trouver" }
-            ]
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "DID",
-            "caption": "Device ID (did)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "Host",
-            "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "RefreshToken",
-            "caption": "RefreshToken (aus HA: auth_key) – empfohlen"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "Username",
-            "caption": "Username (Fallback)"
-        },
-        {
-            "type": "PasswordTextBox",
-            "name": "Password",
-            "caption": "Password (Fallback)"
-        },
-        {
-            "type": "NumberSpinner",
-            "name": "PollInterval",
-            "caption": "Polling (Sek.)",
-            "minimum": 10,
-            "maximum": 3600
-        }
-    ],
-    "actions": [
-        {
-            "type": "Button",
-            "caption": "Login testen",
-            "onClick": "DRMV_TestLogin($id);"
-        },
-        {
-            "type": "Button",
-            "caption": "Ger\u00e4teinfos aktualisieren",
-            "onClick": "DRMV_UpdateDeviceInfo($id);"
-        },
-        {
-            "type": "Button",
-            "caption": "Raw: device/info",
-            "onClick": "DRMV_DebugDeviceInfo($id);"
-        }
-    ]
+  "elements": [
+    {
+      "type": "Label",
+      "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud (wie HACS dreame-vacuum). Tipp: Wenn du aus HA ein Feld \"auth_key\" hast, trag es bei \"AuthKey\" ein (kein RefreshToken!)."
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Region",
+      "caption": "Region (z.B. eu)"
+    },
+    {
+      "type": "Select",
+      "name": "AccountType",
+      "caption": "Account Type",
+      "options": [
+        { "caption": "dreame", "value": "dreame" },
+        { "caption": "mova", "value": "mova" },
+        { "caption": "trouver", "value": "trouver" }
+      ]
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "DID",
+      "caption": "Device ID (did)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Host",
+      "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "AuthKey",
+      "caption": "AuthKey / AccessToken (aus HA: auth_key) – empfohlen"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "RefreshToken",
+      "caption": "RefreshToken (nur wenn du ihn wirklich hast) – sonst leer lassen"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Username",
+      "caption": "Username (Fallback)"
+    },
+    {
+      "type": "PasswordTextBox",
+      "name": "Password",
+      "caption": "Password (Fallback)"
+    },
+    {
+      "type": "NumberSpinner",
+      "name": "PollInterval",
+      "caption": "Polling (Sek.)",
+      "minimum": 10,
+      "maximum": 3600
+    }
+  ],
+  "actions": [
+    { "type": "Button", "caption": "Login testen", "onClick": "DRMV_TestLogin($id);" },
+    { "type": "Button", "caption": "Geräteinfos aktualisieren", "onClick": "DRMV_UpdateDeviceInfo($id);" },
+    { "type": "Button", "caption": "Raw: device/info", "onClick": "DRMV_DebugDeviceInfo($id);" }
+  ]
 }
