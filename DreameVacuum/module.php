@@ -8,10 +8,12 @@ class DreameVacuum extends IPSModule
     const API_DOMAIN_TROUVER  = '.iot.trouver-tech.com';
     const API_PORT            = 13267;
 
-    // OAuth (nur Fallback)
+    // Auth / Login
     const PASSWORD_SALT       = 'RAylYC%fmSKp7%Tq';
     const AUTH_PATH           = '/dreame-auth/oauth/token';
-    const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ=='; // dreame_appv1:dreame_appv1
+
+    // Basic-Auth (dreame_appv1:dreame_appv1)
+    const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ==';
     const TENANT_DEFAULT      = '000000';
 
     // Login form fields
@@ -21,14 +23,21 @@ class DreameVacuum extends IPSModule
     const LOGIN_AND_PASSWORD  = '&password=';
     const LOGIN_TYPE          = '&type=account';
 
-    // Headers
+    // Header names (wir senden beide Varianten, um 401 zu vermeiden)
     const HDR_USER_AGENT      = 'User-Agent';
     const HDR_AUTHORIZATION   = 'Authorization';
-    const HDR_TENANT          = 'tenantId';
-    const HDR_DREAME_AUTH     = 'dreame-auth';
-    const HDR_DREAME_RLC      = 'dreame-rlc';
+
+    // tenant header variants
+    const HDR_TENANT_LC       = 'tenantId';
+    const HDR_TENANT_UC       = 'Tenant-Id';
+
+    // access token header variants
+    const HDR_DREAME_AUTH_LC  = 'dreame-auth';
+    const HDR_DREAME_AUTH_UC  = 'Dreame-Auth';
 
     // Only CN
+    const HDR_DREAME_RLC_LC   = 'dreame-rlc';
+    const HDR_DREAME_RLC_UC   = 'Dreame-Rlc';
     const DREAME_RLC_VALUE    = '1c80b3787b2266776bcdc481f37d8fa42ba10a30af81a6df-1';
 
     // User agents
@@ -43,16 +52,10 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyString('Region', 'eu');
         $this->RegisterPropertyString('AccountType', 'dreame'); // dreame|mova|trouver
         $this->RegisterPropertyString('DID', '');
-        $this->RegisterPropertyString('Host', '');             // e.g. 10000.mt.eu.iot.dreame.tech:19973
-
-        // NEU: direktes Token aus HA (auth_key)
-        $this->RegisterPropertyString('AuthKey', '');          // HA: auth_key (AccessToken)
-
-        // optional OAuth
-        $this->RegisterPropertyString('RefreshToken', '');
+        $this->RegisterPropertyString('Host', '');             // optional: 10000.mt.eu.iot.dreame.tech:19973
+        $this->RegisterPropertyString('RefreshToken', '');     // HA auth_key (kann JWT sein!)
         $this->RegisterPropertyString('Username', '');
         $this->RegisterPropertyString('Password', '');
-
         $this->RegisterPropertyInteger('PollInterval', 60);
 
         $this->RegisterVariableBoolean('Connected', 'Connected', '~Switch', 1);
@@ -65,13 +68,12 @@ class DreameVacuum extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-
         $interval = (int)$this->ReadPropertyInteger('PollInterval');
         if ($interval < 10) $interval = 10;
         $this->SetTimerInterval('UpdateTimer', $interval * 1000);
     }
 
-    // ---- Buttons / UI actions ----
+    // ---------- Buttons ----------
 
     public function TestLogin()
     {
@@ -79,23 +81,48 @@ class DreameVacuum extends IPSModule
         $this->SetLastResponse('');
 
         try {
-            // Statt nur OAuth: wir prüfen mit device/info
-            $this->EnsureLoggedIn(true);
-            $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
-            $this->SetLastResponse(json_encode($info));
+            // KEIN Force-OAuth mehr nötig: wenn JWT vorhanden, nutzen wir es direkt
+            $this->EnsureLoggedIn(false);
 
-            if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0) {
-                $this->SetConnected(true);
-                $this->SetLastError('Login ok (device/info OK)');
-            } else {
-                $this->SetConnected(false);
-                $this->SetLastError('Login unklar (device/info antwortet nicht OK)');
-            }
+            $this->SetConnected(true);
+            $this->SetLastError('Login ok');
         } catch (Exception $e) {
             $this->SetConnected(false);
             $this->SetLastError('Login fehlgeschlagen: ' . $e->getMessage());
+
             $last = $this->GetBuffer('LastLoginResponse');
             if ($last !== '') $this->SetLastResponse($last);
+        }
+    }
+
+    public function UpdateDeviceInfo()
+    {
+        $this->SetLastError('');
+        try {
+            $this->EnsureLoggedIn(false);
+
+            $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
+            $this->SetLastResponse(json_encode($info));
+
+            if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
+                $data = $info['data'];
+
+                // bindDomain/host in Buffer merken, falls Property leer ist
+                if ($this->ReadPropertyString('Host') === '') {
+                    if (isset($data['bindDomain'])) $this->SetBuffer('HostFromCloud', strval($data['bindDomain']));
+                    if (isset($data['host']))       $this->SetBuffer('HostFromCloud', strval($data['host']));
+                }
+
+                if (isset($data['model']))     $this->SetBuffer('Model', strval($data['model']));
+                if (isset($data['masterUid'])) $this->SetBuffer('Uid', strval($data['masterUid']));
+                if (isset($data['uid']))       $this->SetBuffer('Uid', strval($data['uid']));
+            }
+
+            $this->SetConnected(true);
+            $this->SetLastError('Device info ok');
+        } catch (Exception $e) {
+            $this->SetConnected(false);
+            $this->SetLastError($e->getMessage());
         }
     }
 
@@ -112,38 +139,25 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    public function UpdateDeviceInfo()
+    // ---------- Optional: Raw Call / MIoT ----------
+
+    public function RawSend($method, $paramsJson)
     {
-        $this->SetLastError('');
-        try {
-            $this->EnsureLoggedIn(false);
+        if ($paramsJson === null || $paramsJson === '') $paramsJson = 'null';
 
-            $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
-            $this->SetLastResponse(json_encode($info));
-
-            if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
-                $data = $info['data'];
-
-                if ($this->ReadPropertyString('Host') === '') {
-                    if (isset($data['bindDomain'])) $this->SetBuffer('HostFromCloud', strval($data['bindDomain']));
-                    if (isset($data['host']))       $this->SetBuffer('HostFromCloud', strval($data['host']));
-                }
-
-                if (isset($data['model']))     $this->SetBuffer('Model', strval($data['model']));
-                if (isset($data['masterUid'])) $this->SetBuffer('Uid', strval($data['masterUid']));
-                if (isset($data['uid']))       $this->SetBuffer('Uid', strval($data['uid']));
-            }
-
-            $this->SetConnected(true);
-            $this->SetLastError('Device info ok');
-        } catch (Exception $e) {
-            $this->SendDebug('UpdateDeviceInfo', $e->getMessage(), 0);
-            $this->SetConnected(false);
-            $this->SetLastError($e->getMessage());
+        $params = null;
+        if ($paramsJson !== 'null') {
+            $params = json_decode($paramsJson, true);
+            if ($params === null) $params = $paramsJson;
         }
+
+        $result = $this->SendCommand($method, $params);
+        $out = json_encode($result);
+        $this->SetLastResponse($out);
+        return $out;
     }
 
-    // ---- Core helpers ----
+    // ---------- Core helpers ----------
 
     private function GetDID()
     {
@@ -175,73 +189,82 @@ class DreameVacuum extends IPSModule
         return 'https://' . $region . $this->GetDomainSuffix() . ':' . self::API_PORT;
     }
 
+    private function LooksLikeJwt($s)
+    {
+        if (!is_string($s)) return false;
+        $s = trim($s);
+        if ($s === '') return false;
+        // typischer JWT: eyJ...<dot>...<dot>...
+        if (strpos($s, '.') === false) return false;
+        if (substr($s, 0, 3) !== 'eyJ') return false;
+        return (substr_count($s, '.') >= 2);
+    }
+
+    private function Base64UrlDecode($data)
+    {
+        $data = strtr($data, '-_', '+/');
+        $pad = strlen($data) % 4;
+        if ($pad > 0) $data .= str_repeat('=', 4 - $pad);
+        return base64_decode($data);
+    }
+
+    private function JwtGetPayload($jwt)
+    {
+        $parts = explode('.', $jwt);
+        if (count($parts) < 2) return null;
+        $payloadJson = $this->Base64UrlDecode($parts[1]);
+        if ($payloadJson === false || $payloadJson === null) return null;
+        $payload = json_decode($payloadJson, true);
+        if (!is_array($payload)) return null;
+        return $payload;
+    }
+
     private function EnsureLoggedIn($force)
     {
-        // 1) Wenn AuthKey gesetzt ist: direkt als AccessToken verwenden (HA: auth_key)
-        $authKey = trim($this->ReadPropertyString('AuthKey'));
-        if ($authKey !== '') {
-            $this->SetBuffer('AccessToken', $authKey);
-
-            // exp aus JWT lesen (wenn möglich), sonst 24h “gültig” annehmen
-            $exp = $this->TryGetJwtExp($authKey);
-            if ($exp > 0) {
-                $this->SetBuffer('AccessTokenExpire', strval($exp - 60));
-            } else {
-                $this->SetBuffer('AccessTokenExpire', strval(time() + 86400));
-            }
-            return;
-        }
-
-        // 2) Buffer-Token benutzen
+        // 1) wenn wir bereits ein AccessToken im Buffer haben und es nicht abgelaufen ist → ok
         if (!$force) {
             $token = $this->GetBuffer('AccessToken');
             $exp   = (int)$this->GetBuffer('AccessTokenExpire');
             if ($token !== '' && $exp > time()) return;
         }
 
-        // 3) OAuth RefreshToken (nur wenn wirklich vorhanden)
-        $refresh = trim($this->ReadPropertyString('RefreshToken'));
-        if ($refresh !== '') {
-            if ($this->LoginRefresh($refresh)) return;
+        // 2) HA auth_key ist bei dir sehr wahrscheinlich ein JWT Access Token → direkt nutzen
+        $authKey = trim($this->ReadPropertyString('RefreshToken'));
+        if ($authKey !== '' && $this->LooksLikeJwt($authKey)) {
+            $payload = $this->JwtGetPayload($authKey);
+
+            $tenant = self::TENANT_DEFAULT;
+            $exp = time() + 3600;
+
+            if (is_array($payload)) {
+                if (isset($payload['tenant_id'])) $tenant = strval($payload['tenant_id']);
+                if (isset($payload['tenantId']))  $tenant = strval($payload['tenantId']);
+                if (isset($payload['exp']))       $exp = (int)$payload['exp'];
+            }
+
+            $this->SetBuffer('AccessToken', $authKey);
+            $this->SetBuffer('TenantId', $tenant);
+            $this->SetBuffer('AccessTokenExpire', strval($exp - 120));
+            $this->SetBuffer('LastLoginResponse', '{"info":"Using JWT auth_key directly"}');
+            return;
         }
 
-        // 4) Fallback Username/Password
+        // 3) sonst: Refresh-Token Flow versuchen
+        if ($authKey !== '') {
+            if ($this->LoginRefresh($authKey)) return;
+        }
+
+        // 4) fallback: username/password
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
-        if ($user === '' || $pass === '') throw new Exception('AuthKey leer und RefreshToken/Username/Password fehlt');
-        if (!$this->LoginPassword($user, $pass)) throw new Exception('OAuth Login fehlgeschlagen');
-    }
+        if ($user === '' || $pass === '') throw new Exception('Kein gültiger AuthKey/JWT und Username/Password fehlt');
 
-    private function TryGetJwtExp($jwt)
-    {
-        // JWT: header.payload.signature
-        $parts = explode('.', $jwt);
-        if (count($parts) < 2) return 0;
-
-        $payload = $this->Base64UrlDecode($parts[1]);
-        if ($payload === '') return 0;
-
-        $data = json_decode($payload, true);
-        if (!is_array($data)) return 0;
-
-        if (isset($data['exp'])) return (int)$data['exp'];
-        return 0;
-    }
-
-    private function Base64UrlDecode($s)
-    {
-        $s = str_replace('-', '+', $s);
-        $s = str_replace('_', '/', $s);
-        $pad = strlen($s) % 4;
-        if ($pad > 0) $s .= str_repeat('=', 4 - $pad);
-        $out = base64_decode($s);
-        if ($out === false) return '';
-        return $out;
+        if (!$this->LoginPassword($user, $pass)) throw new Exception('Login fehlgeschlagen');
     }
 
     private function LoginRefresh($refreshToken)
     {
-        $data = self::LOGIN_PREFIX . self::LOGIN_REFRESH . rawurlencode($refreshToken);
+        $data = self::LOGIN_PREFIX . self::LOGIN_REFRESH . $refreshToken;
         $res = $this->HttpPostForm($this->GetApiBase() . self::AUTH_PATH, $data);
         $this->SetBuffer('LastLoginResponse', json_encode($res));
         return $this->HandleLoginResponse($res);
@@ -262,11 +285,10 @@ class DreameVacuum extends IPSModule
 
         if (isset($res['access_token'])) {
             $this->SetBuffer('AccessToken', strval($res['access_token']));
+            if (isset($res['refresh_token'])) $this->SetBuffer('RefreshToken', strval($res['refresh_token']));
             if (isset($res['expires_in'])) $this->SetBuffer('AccessTokenExpire', strval(time() + (int)$res['expires_in'] - 120));
             if (isset($res['tenant_id'])) $this->SetBuffer('TenantId', strval($res['tenant_id']));
             if (isset($res['uid'])) $this->SetBuffer('Uuid', strval($res['uid']));
-            // refresh_token speichern, falls vorhanden
-            if (isset($res['refresh_token'])) $this->SetBuffer('RefreshTokenFromOAuth', strval($res['refresh_token']));
             return true;
         }
         return false;
@@ -281,20 +303,90 @@ class DreameVacuum extends IPSModule
         $tenant = $this->GetBuffer('TenantId');
         if ($tenant === '') $tenant = self::TENANT_DEFAULT;
 
+        $token = $this->GetBuffer('AccessToken');
+
         $headers = array(
             'Accept: */*',
-            'Content-Type: application/json',
+            'Accept-Language: en-US;q=0.8',
+            'Accept-Encoding: gzip, deflate',
             self::HDR_USER_AGENT . ': ' . $this->GetUserAgent(),
             self::HDR_AUTHORIZATION . ': ' . self::AUTHORIZATION_VALUE,
-            self::HDR_TENANT . ': ' . $tenant,
-            self::HDR_DREAME_AUTH . ': ' . $this->GetBuffer('AccessToken')
+
+            // beide Tenant Header
+            self::HDR_TENANT_LC . ': ' . $tenant,
+            self::HDR_TENANT_UC . ': ' . $tenant,
+
+            // beide Token Header
+            self::HDR_DREAME_AUTH_LC . ': ' . $token,
+            self::HDR_DREAME_AUTH_UC . ': ' . $token,
+
+            'Content-Type: application/json'
         );
 
         if (strtolower(trim($this->ReadPropertyString('Region'))) === 'cn') {
-            $headers[] = self::HDR_DREAME_RLC . ': ' . self::DREAME_RLC_VALUE;
+            $headers[] = self::HDR_DREAME_RLC_LC . ': ' . self::DREAME_RLC_VALUE;
+            $headers[] = self::HDR_DREAME_RLC_UC . ': ' . self::DREAME_RLC_VALUE;
         }
 
         return $this->CurlPost($url, json_encode($payload), $headers, 15);
+    }
+
+    private function EnsureHostLoaded()
+    {
+        $host = trim($this->ReadPropertyString('Host'));
+        if ($host !== '') return $host;
+
+        $host = $this->GetBuffer('HostFromCloud');
+        if ($host !== '') return $host;
+
+        $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
+        if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
+            if (isset($info['data']['bindDomain'])) $host = strval($info['data']['bindDomain']);
+            if ($host === '' && isset($info['data']['host'])) $host = strval($info['data']['host']);
+            if ($host !== '') {
+                $this->SetBuffer('HostFromCloud', $host);
+                return $host;
+            }
+        }
+        return '';
+    }
+
+    private function SendCommand($method, $params)
+    {
+        $this->EnsureLoggedIn(false);
+
+        $host = $this->EnsureHostLoaded();
+        if ($host === '') throw new Exception('Host/Cluster unbekannt. Setze Host oder klicke "Geräteinfos aktualisieren".');
+
+        $parts = explode('.', $host);
+        $cluster = '';
+        if (count($parts) > 0) $cluster = '-' . $parts[0]; // "-10000"
+
+        $id = (int)$this->GetBuffer('RequestId');
+        if ($id <= 0) $id = mt_rand(1, 100);
+        $id++;
+        $this->SetBuffer('RequestId', strval($id));
+
+        $did = $this->GetDID();
+
+        $payload = array(
+            'did' => $did,
+            'id'  => $id,
+            'data' => array(
+                'did' => $did,
+                'id'  => $id,
+                'method' => $method,
+                'params'  => $params
+            )
+        );
+
+        $path = 'dreame-iot-com' . $cluster . '/device/sendCommand';
+        $res = $this->ApiCall($path, $payload);
+
+        if (is_array($res) && isset($res['data']) && is_array($res['data']) && isset($res['data']['result'])) {
+            return $res['data']['result'];
+        }
+        return $res;
     }
 
     private function HttpPostForm($url, $dataString)
@@ -304,14 +396,20 @@ class DreameVacuum extends IPSModule
 
         $headers = array(
             'Accept: */*',
+            'Accept-Language: en-US;q=0.8',
+            'Accept-Encoding: gzip, deflate',
             'Content-Type: application/x-www-form-urlencoded',
             self::HDR_USER_AGENT . ': ' . $this->GetUserAgent(),
             self::HDR_AUTHORIZATION . ': ' . self::AUTHORIZATION_VALUE,
-            self::HDR_TENANT . ': ' . $tenant
+
+            // beide Tenant Header
+            self::HDR_TENANT_LC . ': ' . $tenant,
+            self::HDR_TENANT_UC . ': ' . $tenant
         );
 
         if (strtolower(trim($this->ReadPropertyString('Region'))) === 'cn') {
-            $headers[] = self::HDR_DREAME_RLC . ': ' . self::DREAME_RLC_VALUE;
+            $headers[] = self::HDR_DREAME_RLC_LC . ': ' . self::DREAME_RLC_VALUE;
+            $headers[] = self::HDR_DREAME_RLC_UC . ': ' . self::DREAME_RLC_VALUE;
         }
 
         return $this->CurlPost($url, $dataString, $headers, 15);
@@ -326,7 +424,7 @@ class DreameVacuum extends IPSModule
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSec);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
-        // Windows/CA-Store-Probleme umgehen
+        // Windows: SSL sonst oft zickig ohne CA Store
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 
