@@ -12,9 +12,4 @@ class DreameVacuum extends IPSModule
     {
         parent::ApplyChanges();
     }
-
-    public function Ping()
-    {
-        return 'pong';
-    }
 }
