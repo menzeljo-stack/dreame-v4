@@ -1,81 +1,26 @@
 {
   "elements": [
-    {
-      "type": "Label",
-      "label": "Dreame Vacuum (ohne Home Assistant). Zugangsdaten stammen aus der Dreame-App / HACS dreame-vacuum."
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "Region",
-      "caption": "Region (eu/cn/us...)"
-    },
-    {
-      "type": "Select",
-      "name": "AccountType",
-      "caption": "Account Type",
-      "options": [
-        {
-          "caption": "dreame",
-          "value": "dreame"
-        },
-        {
-          "caption": "mova",
-          "value": "mova"
-        },
-        {
-          "caption": "trouver",
-          "value": "trouver"
-        }
-      ]
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "DID",
-      "caption": "Device ID (did)"
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "Host",
-      "caption": "Host (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "RefreshToken",
-      "caption": "RefreshToken (HA: auth_key)"
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "Username",
-      "caption": "Username (Fallback)"
-    },
-    {
-      "type": "PasswordTextBox",
-      "name": "Password",
-      "caption": "Password (Fallback)"
-    },
-    {
-      "type": "NumberSpinner",
-      "name": "PollInterval",
-      "caption": "Polling (Sek.)",
-      "minimum": 10,
-      "maximum": 3600
-    }
+    { "type": "Label", "label": "Dreame Vacuum (Cloud wie HA HACS dreame_vacuum). Empfohlen: RefreshToken (HA: auth_key) + Host." },
+
+    { "type": "ValidationTextBox", "name": "Region", "caption": "Region (z.B. eu)" },
+
+    { "type": "Select", "name": "AccountType", "caption": "Account Type", "options": [
+      { "caption": "dreame", "value": "dreame" },
+      { "caption": "mova", "value": "mova" },
+      { "caption": "trouver", "value": "trouver" }
+    ]},
+
+    { "type": "ValidationTextBox", "name": "DID", "caption": "Device ID (did)" },
+    { "type": "ValidationTextBox", "name": "Host", "caption": "Host (aus HA, z.B. 10000.mt.eu.iot.dreame.tech:19973)" },
+
+    { "type": "ValidationTextBox", "name": "RefreshToken", "caption": "RefreshToken (HA: auth_key) – empfohlen" },
+
+    { "type": "ValidationTextBox", "name": "Username", "caption": "Username (Fallback)" },
+    { "type": "PasswordTextBox", "name": "Password", "caption": "Password (Fallback)" },
+
+    { "type": "NumberSpinner", "name": "PollInterval", "caption": "Polling (Sek.)", "minimum": 10, "maximum": 3600 }
   ],
   "actions": [
-    {
-      "type": "Button",
-      "caption": "Test Login",
-      "onClick": "DRMV_TestLogin($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Update device info (host/model)",
-      "onClick": "DRMV_Update($id);"
-    },
-    {
-      "type": "Button",
-      "caption": "Raw: device/info",
-      "onClick": "DRMV_DebugDeviceInfo($id);"
-    }
+    { "type": "Button", "caption": "Test Login", "onClick": "DRMV_TestLogin($id);" }
   ]
 }
