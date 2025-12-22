@@ -1,0 +1,17 @@
+{
+  "translations": {
+    "de": {
+      "Region (eu/cn/us...)": "Region (eu/cn/us...)",
+      "Account Type": "Account-Typ",
+      "Device ID (did)": "Geräte-ID (did)",
+      "Host (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)": "Host (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)",
+      "RefreshToken (HA: auth_key)": "RefreshToken (HA: auth_key)",
+      "Username (Fallback)": "Benutzername (Fallback)",
+      "Password (Fallback)": "Passwort (Fallback)",
+      "Polling (Sek.)": "Polling (Sek.)",
+      "Test Login": "Login testen",
+      "Update device info (host/model)": "Geräteinfos aktualisieren (host/model)",
+      "Raw: device/info": "Rohdaten: device/info"
+    }
+  }
+}
