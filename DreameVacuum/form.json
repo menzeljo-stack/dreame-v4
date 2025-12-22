@@ -1,0 +1,81 @@
+{
+  "elements": [
+    {
+      "type": "Label",
+      "label": "Dreame Cloud (HACS dreame-vacuum). Nutze bevorzugt RefreshToken (HA: auth_key)."
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Region",
+      "caption": "Region (eu/cn/us...)"
+    },
+    {
+      "type": "Select",
+      "name": "AccountType",
+      "caption": "Account Type",
+      "options": [
+        {
+          "caption": "dreame",
+          "value": "dreame"
+        },
+        {
+          "caption": "mova",
+          "value": "mova"
+        },
+        {
+          "caption": "trouver",
+          "value": "trouver"
+        }
+      ]
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "DID",
+      "caption": "Device ID (did)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Host",
+      "caption": "Host (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "RefreshToken",
+      "caption": "RefreshToken (HA: auth_key)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Username",
+      "caption": "Username (Fallback)"
+    },
+    {
+      "type": "PasswordTextBox",
+      "name": "Password",
+      "caption": "Password (Fallback)"
+    },
+    {
+      "type": "NumberSpinner",
+      "name": "PollInterval",
+      "caption": "Polling (Sek.)",
+      "minimum": 10,
+      "maximum": 3600
+    }
+  ],
+  "actions": [
+    {
+      "type": "Button",
+      "caption": "Test Login",
+      "onClick": "DREAME_TestLogin($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Update device info (host/model)",
+      "onClick": "DREAME_Update($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Raw: device/info",
+      "onClick": "DREAME_DebugDeviceInfo($id);"
+    }
+  ]
+}
