@@ -2,7 +2,7 @@
   "elements": [
     {
       "type": "Label",
-      "label": "Dreame Cloud (HACS dreame-vacuum). Nutze bevorzugt RefreshToken (HA: auth_key)."
+      "label": "Dreame Vacuum (ohne Home Assistant). Zugangsdaten stammen aus der Dreame-App / HACS dreame-vacuum."
     },
     {
       "type": "ValidationTextBox",
@@ -65,17 +65,17 @@
     {
       "type": "Button",
       "caption": "Test Login",
-      "onClick": "DREAME_TestLogin($id);"
+      "onClick": "DRMV_TestLogin($id);"
     },
     {
       "type": "Button",
       "caption": "Update device info (host/model)",
-      "onClick": "DREAME_Update($id);"
+      "onClick": "DRMV_Update($id);"
     },
     {
       "type": "Button",
       "caption": "Raw: device/info",
-      "onClick": "DREAME_DebugDeviceInfo($id);"
+      "onClick": "DRMV_DebugDeviceInfo($id);"
     }
   ]
 }
