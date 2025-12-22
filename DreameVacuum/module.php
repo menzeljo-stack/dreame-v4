@@ -5,11 +5,16 @@ class DreameVacuum extends IPSModule
     public function Create()
     {
         parent::Create();
-        $this->RegisterVariableString("Test", "Test", "~TextBox", 1);
+        $this->RegisterPropertyString('Test', '');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+    }
+
+    public function Ping()
+    {
+        return 'pong';
     }
 }
