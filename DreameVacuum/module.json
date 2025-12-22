@@ -1,6 +1,6 @@
 {
   "id": "{DCFFD2E0-DD8B-41E1-BCC4-26A08B336FE5}",
-  "name": "Dreame Vacuum V4",
+  "name": "DreameVacuum",
   "type": 3,
   "vendor": "Dreame",
   "aliases": [
@@ -9,5 +9,5 @@
   "parentRequirements": [],
   "childRequirements": [],
   "implemented": [],
-  "prefix": "DREAME"
+  "prefix": "DRMV"
 }
