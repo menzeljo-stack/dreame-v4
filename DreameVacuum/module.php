@@ -31,9 +31,19 @@ class DreameVacuum extends IPSModule
     const UA_MOVA    = 'Mova_Smarthome/1.2.4 (iPhone; iOS 18.4.1; Scale/3.00)';
     const UA_TROUVER = 'Trouver_Smarthome/1.0.9 (iPhone; iOS 18.4.1; Scale/3.00)';
 
-    // Start-Clean MIoT action (common)
+    // Common MIoT action
     const ACTION_SIID_START_CLEAN = 4;
     const ACTION_AIID_START_CLEAN = 1;
+
+    // Common values for piid=1 within Start-Clean action (varies by model/firmware)
+    const CMD_START      = 2;
+    const CMD_PAUSE      = 3;
+    const CMD_STOP       = 4;
+    const CMD_DOCK       = 5;
+    const CMD_SPOT       = 6;
+    const CMD_LOCATE     = 21;
+    const CMD_SHORTCUT   = 25;
+    const CMD_ROOMS      = 18;
 
     public function Create()
     {
@@ -45,8 +55,8 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyString('Host', '');
 
         // IMPORTANT: HA auth_key is a JWT ACCESS token (NOT a refresh token)
-        $this->RegisterPropertyString('AuthKey', '');          // JWT from HA
-        $this->RegisterPropertyString('RefreshToken', '');     // optional; only if you really have one
+        $this->RegisterPropertyString('AuthKey', '');
+        $this->RegisterPropertyString('RefreshToken', '');
         $this->RegisterPropertyString('Username', '');
         $this->RegisterPropertyString('Password', '');
 
@@ -55,6 +65,7 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyInteger('DeviceInfoPollInterval', 3600);
         $this->RegisterPropertyBoolean('AutoUpdateDeviceInfo', true);
 
+        // Debug vars
         $this->MaintainVariable('Connected', 'Connected', VARIABLETYPE_BOOLEAN, '~Switch', 1, true);
         $this->MaintainVariable('LastError', 'LastError', VARIABLETYPE_STRING, '~TextBox', 2, true);
         $this->MaintainVariable('LastResponse', 'LastResponse', VARIABLETYPE_STRING, '~TextBox', 3, true);
@@ -81,8 +92,85 @@ class DreameVacuum extends IPSModule
 
         if (IPS_GetKernelRunlevel() == KR_READY) {
             $this->EnsureProfiles();
-            if ($this->ReadPropertyBoolean('AutoCreateVariables')) $this->EnsureVariables();
+            if ($this->ReadPropertyBoolean('AutoCreateVariables')) {
+                $this->EnsureVariables();
+            }
         }
+    }
+
+    // Visualisierung/Bedienung: Variablenaktionen abfangen
+    public function RequestAction($Ident, $Value)
+    {
+        // Command selector
+        if ($Ident === 'Command') {
+            $cmd = (int)$Value;
+            try {
+                switch ($cmd) {
+                    case 1: $this->StartCleaning(); break;
+                    case 2: $this->PauseCleaning(); break;
+                    case 3: $this->StopCleaning(); break;
+                    case 4: $this->Dock(); break;
+                    case 5: $this->SpotClean(); break;
+                    case 6: $this->Locate(); break;
+                    default: break;
+                }
+                // reset selector to 0 (Idle)
+                $vid = @$this->GetIDForIdent('Command');
+                if ($vid) SetValueInteger($vid, 0);
+            } catch (Exception $e) {
+                $this->SetLastError($e->getMessage());
+            }
+            return;
+        }
+
+        // Shortcut select (dropdown)
+        if ($Ident === 'ShortcutSelected') {
+            $vid = @$this->GetIDForIdent('ShortcutSelected');
+            if ($vid) SetValueInteger($vid, (int)$Value);
+            return;
+        }
+
+        // Start selected shortcut (button)
+        if ($Ident === 'StartSelectedShortcut') {
+            $on = (bool)$Value;
+            if ($on) {
+                try {
+                    $sid = $this->GetSelectedShortcutId();
+                    if ($sid <= 0) throw new Exception('Kein Shortcut ausgewählt');
+                    $this->StartShortcut($sid);
+                } catch (Exception $e) {
+                    $this->SetLastError($e->getMessage());
+                }
+                $vid = @$this->GetIDForIdent('StartSelectedShortcut');
+                if ($vid) SetValueBoolean($vid, false);
+            }
+            return;
+        }
+
+        // Per-shortcut button variables: SC_<id>
+        if (strpos($Ident, 'SC_') === 0) {
+            $on = (bool)$Value;
+            $sid = (int)substr($Ident, 3);
+            if ($sid > 0 && $on) {
+                try {
+                    $this->StartShortcut($sid);
+                } catch (Exception $e) {
+                    $this->SetLastError($e->getMessage());
+                }
+                $vid = @$this->GetIDForIdent($Ident);
+                if ($vid) SetValueBoolean($vid, false);
+            }
+            return;
+        }
+
+        throw new Exception('Invalid Ident');
+    }
+
+    private function GetSelectedShortcutId()
+    {
+        $vid = @$this->GetIDForIdent('ShortcutSelected');
+        if (!$vid) return 0;
+        return (int)GetValueInteger($vid);
     }
 
     // ---------------- UI Actions ----------------
@@ -155,7 +243,7 @@ class DreameVacuum extends IPSModule
                 array('siid' => 4,  'piid' => 2),
                 array('siid' => 4,  'piid' => 3),
                 array('siid' => 4,  'piid' => 23),
-                array('siid' => 4,  'piid' => 48),
+                array('siid' => 4,  'piid' => 48), // shortcuts list
 
                 array('siid' => 9,  'piid' => 1),
                 array('siid' => 9,  'piid' => 2),
@@ -211,8 +299,11 @@ class DreameVacuum extends IPSModule
                         $this->SetVarString('ShortcutsRaw', (string)$val);
                         $decoded = $this->DecodeShortcutList((string)$val);
                         if ($decoded !== null) {
-                            $this->SetVarString('ShortcutsJson', json_encode($decoded, JSON_UNESCAPED_UNICODE));
-                            $this->SetVarString('ShortcutsText', $this->ShortcutsToText($decoded));
+                            $normalized = $this->NormalizeShortcuts($decoded);
+                            $this->SetVarString('ShortcutsJson', json_encode($normalized, JSON_UNESCAPED_UNICODE));
+                            $this->SetVarString('ShortcutsText', $this->ShortcutsToText($normalized));
+                            $this->UpdateShortcutProfile($normalized);
+                            $this->EnsureShortcutVariables($normalized);
                         }
                         break;
                 }
@@ -231,11 +322,13 @@ class DreameVacuum extends IPSModule
     {
         $this->SetLastError('');
         try {
-            $decoded = $this->GetShortcuts();
+            $normalized = $this->GetShortcuts();
             if ($this->ReadPropertyBoolean('AutoCreateVariables')) {
                 $this->EnsureVariables();
-                $this->SetVarString('ShortcutsJson', json_encode($decoded, JSON_UNESCAPED_UNICODE));
-                $this->SetVarString('ShortcutsText', $this->ShortcutsToText($decoded));
+                $this->SetVarString('ShortcutsJson', json_encode($normalized, JSON_UNESCAPED_UNICODE));
+                $this->SetVarString('ShortcutsText', $this->ShortcutsToText($normalized));
+                $this->UpdateShortcutProfile($normalized);
+                $this->EnsureShortcutVariables($normalized);
             }
             $this->SetLastError('Shortcuts ok');
         } catch (Exception $e) {
@@ -243,12 +336,66 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    // ---------------- Commands ----------------
+    // ---------------- Commands (Public) ----------------
+
+    public function StartCleaning()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_START)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function PauseCleaning()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_PAUSE)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function StopCleaning()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_STOP)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function Dock()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_DOCK)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function SpotClean()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_SPOT)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function Locate()
+    {
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, array(
+            array('piid' => 1, 'value' => self::CMD_LOCATE)
+        ));
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
 
     public function StartShortcut($shortcutId)
     {
         $in = array(
-            array('piid' => 1, 'value' => 25),
+            array('piid' => 1, 'value' => self::CMD_SHORTCUT),
             array('piid' => 10, 'value' => strval($shortcutId))
         );
         $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
@@ -271,7 +418,7 @@ class DreameVacuum extends IPSModule
         $payload = array('selects' => $selects);
 
         $in = array(
-            array('piid' => 1, 'value' => 18),
+            array('piid' => 1, 'value' => self::CMD_ROOMS),
             array('piid' => 10, 'value' => json_encode($payload))
         );
         $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
@@ -304,7 +451,8 @@ class DreameVacuum extends IPSModule
 
         $decoded = $this->DecodeShortcutList($raw);
         if ($decoded === null) return array();
-        return $decoded;
+
+        return $this->NormalizeShortcuts($decoded);
     }
 
     private function DecodeShortcutList($raw)
@@ -322,24 +470,130 @@ class DreameVacuum extends IPSModule
         return is_array($j) ? $j : null;
     }
 
-    private function ShortcutsToText($decoded)
+    private function DecodeShortcutName($maybeBase64)
     {
-        if (!is_array($decoded)) return '';
-        $lines = array();
+        $s = trim((string)$maybeBase64);
+        if ($s === '') return '';
+
+        $b = base64_decode($s, true);
+        if ($b === false) return $s;
+
+        // Heuristic: if decoded has control chars -> keep original
+        $ctrl = 0;
+        for ($i = 0; $i < strlen($b); $i++) {
+            $o = ord($b[$i]);
+            if ($o < 9 || ($o > 13 && $o < 32)) $ctrl++;
+        }
+        if ($ctrl > 0) return $s;
+
+        return $b;
+    }
+
+    private function NormalizeShortcuts($decoded)
+    {
+        $out = array();
+        if (!is_array($decoded)) return $out;
 
         foreach ($decoded as $entry) {
-            if (!is_array($entry)) continue;
-            $id = null;
-            $name = null;
+            if (!is_array($entry) || !isset($entry['id'])) continue;
 
-            if (isset($entry['id'])) $id = $entry['id'];
-            if (isset($entry['shortcutId'])) $id = $entry['shortcutId'];
-            if (isset($entry['name'])) $name = $entry['name'];
-            if (isset($entry['title'])) $name = $entry['title'];
+            $id = (int)$entry['id'];
+            $name = '';
+            if (isset($entry['name'])) $name = $this->DecodeShortcutName($entry['name']);
+            if ($name === '') $name = 'Shortcut ' . $id;
 
-            if ($id !== null || $name !== null) $lines[] = strval($id) . ': ' . strval($name);
+            $out[] = array('id' => $id, 'name' => $name);
+        }
+        return $out;
+    }
+
+    private function ShortcutsToText($normalized)
+    {
+        if (!is_array($normalized)) return '';
+        $lines = array();
+        foreach ($normalized as $entry) {
+            if (!is_array($entry) || !isset($entry['id'])) continue;
+            $lines[] = strval($entry['id']) . ': ' . (isset($entry['name']) ? strval($entry['name']) : '');
         }
         return implode("\n", $lines);
+    }
+
+    private function UpdateShortcutProfile($shortcuts)
+    {
+        $name = 'DRMV.Shortcuts';
+        if (!IPS_VariableProfileExists($name)) {
+            IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
+        }
+
+        // Always include "—"
+        IPS_SetVariableProfileAssociation($name, 0, '—', '', 0);
+
+        if (!is_array($shortcuts)) return;
+        foreach ($shortcuts as $sc) {
+            if (!is_array($sc) || !isset($sc['id'])) continue;
+            $id = (int)$sc['id'];
+            $caption = isset($sc['name']) ? (string)$sc['name'] : ('Shortcut ' . $id);
+            IPS_SetVariableProfileAssociation($name, $id, $caption, '', 0);
+        }
+    }
+
+    private function EnsureShortcutVariables($shortcuts)
+    {
+        if (!is_array($shortcuts)) return;
+
+        // A) Selection + start button
+        $this->MaintainVariable('ShortcutSelected', 'Shortcut auswählen', VARIABLETYPE_INTEGER, 'DRMV.Shortcuts', 100, true);
+        $this->EnableAction('ShortcutSelected');
+
+        $this->MaintainVariable('StartSelectedShortcut', 'Shortcut starten', VARIABLETYPE_BOOLEAN, '~Switch', 101, true);
+        $this->EnableAction('StartSelectedShortcut');
+
+        // B) Per-shortcut switches under a subcategory
+        $catId = $this->EnsureCategory('Shortcuts', 'Shortcuts', 200);
+
+        $pos = 1;
+        foreach ($shortcuts as $sc) {
+            if (!is_array($sc) || !isset($sc['id'])) continue;
+            $id = (int)$sc['id'];
+            $name = isset($sc['name']) ? (string)$sc['name'] : ('Shortcut ' . $id);
+            $ident = 'SC_' . $id;
+
+            $varId = $this->EnsureVariable($ident, $name, VARIABLETYPE_BOOLEAN, '~Switch', $pos, $catId);
+            IPS_SetVariableCustomAction($varId, $this->InstanceID);
+            $pos++;
+        }
+    }
+
+    private function EnsureCategory($ident, $name, $pos)
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $this->InstanceID);
+        if ($id && $id > 0) {
+            IPS_SetName($id, $name);
+            IPS_SetPosition($id, $pos);
+            return $id;
+        }
+
+        $id = IPS_CreateCategory();
+        IPS_SetParent($id, $this->InstanceID);
+        IPS_SetIdent($id, $ident);
+        IPS_SetName($id, $name);
+        IPS_SetPosition($id, $pos);
+        return $id;
+    }
+
+    private function EnsureVariable($ident, $name, $type, $profile, $pos, $parentId)
+    {
+        $id = @IPS_GetObjectIDByIdent($ident, $parentId);
+        if (!$id || $id <= 0) {
+            $id = IPS_CreateVariable($type);
+            IPS_SetParent($id, $parentId);
+            IPS_SetIdent($id, $ident);
+        }
+
+        IPS_SetName($id, $name);
+        IPS_SetPosition($id, $pos);
+        if ($profile !== '') IPS_SetVariableCustomProfile($id, $profile);
+        return $id;
     }
 
     // ---------------- Profiles / Variables ----------------
@@ -363,6 +617,22 @@ class DreameVacuum extends IPSModule
             5 => 'Fährt zur Station'
         ));
 
+        $this->EnsureIntProfile('DRMV.Command', array(
+            0 => '—',
+            1 => 'Start',
+            2 => 'Pause',
+            3 => 'Stop',
+            4 => 'Zur Station',
+            5 => 'Spot Clean',
+            6 => 'Suchen / Beep'
+        ));
+
+        // Shortcut select profile (will be filled/updated when shortcuts are loaded)
+        if (!IPS_VariableProfileExists('DRMV.Shortcuts')) {
+            IPS_CreateVariableProfile('DRMV.Shortcuts', VARIABLETYPE_INTEGER);
+            IPS_SetVariableProfileAssociation('DRMV.Shortcuts', 0, '—', '', 0);
+        }
+
         $this->EnsureIntProfileSimple('DRMV.Minutes', ' min');
         $this->EnsureIntProfileSimple('DRMV.Hours', ' h');
         $this->EnsureIntProfileSimple('DRMV.Area', ' m²');
@@ -370,12 +640,14 @@ class DreameVacuum extends IPSModule
 
     private function EnsureVariables()
     {
+        // Info
         $this->MaintainVariable('Model', 'Model', VARIABLETYPE_STRING, '~TextBox', 10, true);
         $this->MaintainVariable('Firmware', 'Firmware', VARIABLETYPE_STRING, '~TextBox', 11, true);
         $this->MaintainVariable('Name', 'Name', VARIABLETYPE_STRING, '~TextBox', 12, true);
         $this->MaintainVariable('Mac', 'Mac', VARIABLETYPE_STRING, '~TextBox', 13, true);
         $this->MaintainVariable('Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 14, true);
 
+        // Status
         $this->MaintainVariable('DeviceStatus', 'Status', VARIABLETYPE_INTEGER, 'DRMV.DeviceStatus', 20, true);
         $this->MaintainVariable('ChargingState', 'Ladestatus', VARIABLETYPE_INTEGER, 'DRMV.ChargingState', 22, true);
         $this->MaintainVariable('Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 23, true);
@@ -387,6 +659,7 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('CleaningArea', 'Reinigungsfläche', VARIABLETYPE_FLOAT, 'DRMV.Area', 31, true);
         $this->MaintainVariable('CleaningMode', 'Cleaning Mode', VARIABLETYPE_INTEGER, '', 32, true);
 
+        // Consumables
         $this->MaintainVariable('MainBrushLife', 'Hauptbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
         $this->MaintainVariable('MainBrushLeftTime', 'Hauptbürste Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 41, true);
         $this->MaintainVariable('SideBrushLife', 'Seitenbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 42, true);
@@ -394,16 +667,24 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('FilterLife', 'Filter Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 44, true);
         $this->MaintainVariable('FilterLeftTime', 'Filter Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 45, true);
 
+        // Shortcuts RAW/JSON/TEXT
         $this->MaintainVariable('ShortcutsRaw', 'Shortcuts Raw (4-48)', VARIABLETYPE_STRING, '~TextBox', 70, true);
         $this->MaintainVariable('ShortcutsJson', 'Shortcuts (JSON)', VARIABLETYPE_STRING, '~TextBox', 71, true);
         $this->MaintainVariable('ShortcutsText', 'Shortcuts (Text)', VARIABLETYPE_STRING, '~TextBox', 72, true);
 
+        // Command selector for visualization
+        $this->MaintainVariable('Command', 'Command', VARIABLETYPE_INTEGER, 'DRMV.Command', 80, true);
+        $this->EnableAction('Command');
+
+        // Update timestamp
         $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
     }
 
     private function EnsureIntProfile($name, $associations)
     {
-        if (!IPS_VariableProfileExists($name)) IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
+        if (!IPS_VariableProfileExists($name)) {
+            IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
+        }
         foreach ($associations as $value => $text) {
             IPS_SetVariableProfileAssociation($name, (int)$value, (string)$text, '', 0);
         }
@@ -461,7 +742,7 @@ class DreameVacuum extends IPSModule
         if ($exp > 0) {
             $this->SetBuffer('AccessTokenExpire', strval($exp - 120));
         } else {
-            $this->SetBuffer('AccessTokenExpire', strval(time() + 43200)); // 12h
+            $this->SetBuffer('AccessTokenExpire', strval(time() + 43200));
         }
         return true;
     }
@@ -492,21 +773,18 @@ class DreameVacuum extends IPSModule
             if ($token !== '' && $exp > time()) return;
         }
 
-        // 1) Prefer auth_key (HA) as ACCESS token
         if ($this->MaybeUseAuthKeyAsAccessToken()) {
             $token = $this->GetBuffer('AccessToken');
             $exp   = (int)$this->GetBuffer('AccessTokenExpire');
             if ($token !== '' && $exp > time()) return;
         }
 
-        // 2) Real refresh token (optional)
         $refresh = trim($this->ReadPropertyString('RefreshToken'));
         if ($refresh === '') $refresh = $this->GetBuffer('RefreshToken');
         if ($refresh !== '') {
             if ($this->LoginRefresh($refresh)) return;
         }
 
-        // 3) Username/Password fallback
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
         if ($user === '' || $pass === '') {
