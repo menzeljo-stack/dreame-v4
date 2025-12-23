@@ -663,7 +663,7 @@ class DreameVacuum extends IPSModule
             6 => 'Lädt',
             12 => 'Saugen & Wischen',
             13 => 'Laden abgeschlossen',
-            14 => 'Mopp-Reinigung'
+            14 => 'Wischen'
         ));
 
         $this->EnsureIntProfile('DRMV.ChargingState', array(
