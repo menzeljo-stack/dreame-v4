@@ -1,11 +1,13 @@
 {
-  "id": "{DCFFD2E0-DD8B-41E1-BCC4-26A08B336FE5}",
-  "name": "Dreame Vacuum",
-  "type": 3,
-  "vendor": "Dreame",
-  "aliases": ["Dreame Vacuum"],
-  "parentRequirements": [],
-  "childRequirements": [],
-  "implemented": [],
-  "prefix": "DRMV"
+    "id": "{A8D5C2F1-4F50-4B4A-9D17-8C75A7F4F9A2}",
+    "name": "Dreame Vacuum",
+    "type": 3,
+    "vendor": "Dreame",
+    "aliases": [
+        "Dreame Vacuum"
+    ],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "DRMV"
 }
