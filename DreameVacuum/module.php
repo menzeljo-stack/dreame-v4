@@ -2,8 +2,6 @@
 
 class DreameVacuum extends IPSModule
 {
-    // ===== Dreame Cloud (as used by HACS dreame-vacuum) =====
-
     // Domains
     const API_DOMAIN_DREAME   = '.iot.dreame.tech';
     const API_DOMAIN_MOVA     = '.iot.mova-tech.com';
@@ -14,8 +12,8 @@ class DreameVacuum extends IPSModule
     const PASSWORD_SALT       = 'RAylYC%fmSKp7%Tq';
     const AUTH_PATH           = '/dreame-auth/oauth/token';
 
-    // IMPORTANT: This is the Basic-Auth used by the Dreame app / HACS integration
-    const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOkFQXmR2QHpAU1FZVnhOODg=';
+    // Basic-Auth (dreame_appv1:dreame_appv1)
+    const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ==';
     const TENANT_DEFAULT      = '000000';
 
     // Login form fields
@@ -25,12 +23,12 @@ class DreameVacuum extends IPSModule
     const LOGIN_AND_PASSWORD  = '&password=';
     const LOGIN_TYPE          = '&type=account';
 
-    // Headers (match HACS integration)
+    // Headers
     const HDR_USER_AGENT      = 'User-Agent';
     const HDR_AUTHORIZATION   = 'Authorization';
-    const HDR_TENANT          = 'Tenant-Id';
-    const HDR_DREAME_AUTH     = 'Dreame-Auth';
-    const HDR_DREAME_RLC      = 'Dreame-Rlc';
+    const HDR_TENANT          = 'tenantId';
+    const HDR_DREAME_AUTH     = 'dreame-auth';
+    const HDR_DREAME_RLC      = 'dreame-rlc';
 
     // Only CN
     const DREAME_RLC_VALUE    = '1c80b3787b2266776bcdc481f37d8fa42ba10a30af81a6df-1';
@@ -53,23 +51,28 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyString('Password', '');
         $this->RegisterPropertyInteger('PollInterval', 60);
 
+        // Diagnostics
         $this->RegisterVariableBoolean('Connected', 'Connected', '~Switch', 1);
         $this->RegisterVariableString('LastError', 'LastError', '~TextBox', 2);
         $this->RegisterVariableString('LastResponse', 'LastResponse', '~TextBox', 3);
 
-        $this->RegisterTimer('UpdateTimer', 0, 'DRMV_UpdateDeviceInfo($_IPS["TARGET"]);');
+        // Timer
+        $this->RegisterTimer('UpdateTimer', 0, 'DRMV_UpdateStatus($_IPS["TARGET"]);');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
 
+        $this->CreateProfiles();
+        $this->CreateStatusVariables();
+
         $interval = (int)$this->ReadPropertyInteger('PollInterval');
         if ($interval < 10) $interval = 10;
         $this->SetTimerInterval('UpdateTimer', $interval * 1000);
     }
 
-    // ---- Buttons / UI actions ----
+    // ---- UI actions ----
 
     public function TestLogin()
     {
@@ -79,18 +82,12 @@ class DreameVacuum extends IPSModule
         try {
             $this->EnsureLoggedIn(true);
             $this->SetConnected(true);
-
-            $last = $this->GetBuffer('LastLoginResponse');
-            if ($last !== '') $this->SetLastResponse($last);
-
             $this->SetLastError('Login ok');
         } catch (Exception $e) {
             $this->SetConnected(false);
             $this->SetLastError('Login fehlgeschlagen: ' . $e->getMessage());
-
             $last = $this->GetBuffer('LastLoginResponse');
             if ($last !== '') $this->SetLastResponse($last);
-            // nicht werfen -> sonst Fatal Error im Symcon UI
         }
     }
 
@@ -116,7 +113,6 @@ class DreameVacuum extends IPSModule
             $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
             $this->SetLastResponse(json_encode($info));
 
-            // Save useful fields into buffers if present
             if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
                 $data = $info['data'];
 
@@ -125,9 +121,15 @@ class DreameVacuum extends IPSModule
                     if (isset($data['host']))       $this->SetBuffer('HostFromCloud', strval($data['host']));
                 }
 
-                if (isset($data['model']))     $this->SetBuffer('Model', strval($data['model']));
-                if (isset($data['masterUid'])) $this->SetBuffer('Uid', strval($data['masterUid']));
-                if (isset($data['uid']))       $this->SetBuffer('Uid', strval($data['uid']));
+                if (isset($data['model']))       SetValueString($this->GetIDForIdent('Model'), strval($data['model']));
+                if (isset($data['ver']))         SetValueString($this->GetIDForIdent('Firmware'), strval($data['ver']));
+                if (isset($data['customName']))  SetValueString($this->GetIDForIdent('DeviceName'), strval($data['customName']));
+                if (isset($data['online']))      SetValueBoolean($this->GetIDForIdent('Online'), (bool)$data['online']);
+
+                if (isset($data['model']))       $this->SetBuffer('Model', strval($data['model']));
+                if (isset($data['customName']))  $this->SetBuffer('CustomName', strval($data['customName']));
+                if (isset($data['masterUid']))   $this->SetBuffer('Uid', strval($data['masterUid']));
+                if (isset($data['uid']))         $this->SetBuffer('Uid', strval($data['uid']));
             }
 
             $this->SetConnected(true);
@@ -139,12 +141,254 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    // ---- MIoT via sendCommand (optional scripting) ----
+    public function UpdateStatus()
+    {
+        $this->SetLastError('');
+
+        try {
+            $this->EnsureLoggedIn(false);
+            $this->EnsureHostLoaded();
+
+            // „Sinnige“ Status-Props (bei dir liefern diese bereits Werte)
+            $pairs = array(
+                array(2, 1),  // state
+                array(2, 2),  // error code
+                array(3, 1),  // battery
+                array(3, 2),  // charging status
+                array(9, 1),  // clean time / history (model dependent)
+                array(9, 2),  // clean area / history (model dependent)
+                array(11, 1), // consumable 1 (model dependent)
+                array(11, 2)  // consumable 2 (model dependent)
+            );
+
+            $payload = array();
+            foreach ($pairs as $p) {
+                $payload[] = array('did' => $this->GetDID(), 'siid' => (int)$p[0], 'piid' => (int)$p[1]);
+            }
+
+            $result = $this->SendCommand('get_properties', $payload);
+            $this->SetLastResponse(json_encode($result));
+
+            $map = array();
+            if (is_array($result)) {
+                foreach ($result as $item) {
+                    if (!is_array($item)) continue;
+                    if (!isset($item['siid']) || !isset($item['piid'])) continue;
+                    $key = strval($item['siid']) . ':' . strval($item['piid']);
+                    $map[$key] = $item;
+                }
+            }
+
+            $state = $this->GetValueFromMap($map, '2:1');
+            $err   = $this->GetValueFromMap($map, '2:2');
+            $bat   = $this->GetValueFromMap($map, '3:1');
+            $chg   = $this->GetValueFromMap($map, '3:2');
+            $tmin  = $this->GetValueFromMap($map, '9:1');
+            $area  = $this->GetValueFromMap($map, '9:2');
+            $c1    = $this->GetValueFromMap($map, '11:1');
+            $c2    = $this->GetValueFromMap($map, '11:2');
+
+            if ($bat !== null)   SetValueInteger($this->GetIDForIdent('Battery'), (int)$bat);
+            if ($chg !== null)   SetValueInteger($this->GetIDForIdent('ChargingStatus'), (int)$chg);
+            if ($err !== null)   SetValueInteger($this->GetIDForIdent('ErrorCode'), (int)$err);
+            if ($state !== null) SetValueInteger($this->GetIDForIdent('StateCode'), (int)$state);
+
+            if ($tmin !== null)  SetValueInteger($this->GetIDForIdent('CleanTimeMin'), (int)$tmin);
+            if ($area !== null)  SetValueFloat($this->GetIDForIdent('CleanAreaM2'), (float)$area);
+
+            if ($c1 !== null)    SetValueInteger($this->GetIDForIdent('Consumable1'), (int)$c1);
+            if ($c2 !== null)    SetValueInteger($this->GetIDForIdent('Consumable2'), (int)$c2);
+
+            SetValueString($this->GetIDForIdent('StateText'), $this->StateToText($state, $chg, $err));
+            SetValueString($this->GetIDForIdent('ChargingText'), $this->ChargingToText($chg));
+            SetValueString($this->GetIDForIdent('ErrorText'), $this->ErrorToText($err));
+            SetValueInteger($this->GetIDForIdent('LastUpdate'), time());
+
+            $this->SetConnected(true);
+            $this->SetLastError('Status ok');
+        } catch (Exception $e) {
+            $this->SetConnected(false);
+            $this->SetLastError($e->getMessage());
+        }
+    }
+
+    private function GetValueFromMap($map, $key)
+    {
+        if (!isset($map[$key])) return null;
+        $item = $map[$key];
+        if (isset($item['code']) && (int)$item['code'] !== 0) return null;
+        if (!isset($item['value'])) return null;
+        return $item['value'];
+    }
+
+    // ---- Text mappings ----
+
+    private function ChargingToText($code)
+    {
+        if ($code === null) return '';
+        $c = (int)$code;
+        switch ($c) {
+            case 1: return 'Lädt';
+            case 2: return 'Nicht am Laden';
+            case 3: return 'Voll geladen';
+            case 5: return 'Zur Station';
+            default: return 'Unbekannt (' . $c . ')';
+        }
+    }
+
+    private function ErrorToText($code)
+    {
+        if ($code === null) return '';
+        $c = (int)$code;
+        if ($c === 0) return 'Kein Fehler';
+
+        $map = array(
+            1 => 'Räder hängen / angehoben',
+            2 => 'Abgrundsensor',
+            3 => 'Stoßfänger',
+            4 => 'Gesten-/Bewegungssensor',
+            5 => 'Stoßfänger (wiederholt)',
+            6 => 'Räder (wiederholt)'
+        );
+        if (isset($map[$c])) return $map[$c];
+
+        return 'Fehler (' . $c . ')';
+    }
+
+    private function StateToText($stateCode, $chargingCode, $errorCode)
+    {
+        $err = ($errorCode === null) ? 0 : (int)$errorCode;
+        if ($err > 0) return 'Fehler';
+
+        $chg = ($chargingCode === null) ? 0 : (int)$chargingCode;
+        if ($chg === 1) return 'Lädt';
+        if ($chg === 3) return 'Voll geladen';
+        if ($chg === 5) return 'Zur Station';
+
+        if ($stateCode === null) return '';
+        $s = (int)$stateCode;
+
+        $map = array(
+            0  => 'Unbekannt',
+            1  => 'Bereit/Idle',
+            2  => 'Pausiert',
+            3  => 'Reinigt',
+            4  => 'Zurück zur Station',
+            5  => 'Andocken',
+            6  => 'Laden',
+            7  => 'Fehler',
+            13 => 'Laden'
+        );
+        if (isset($map[$s])) return $map[$s];
+        return 'Unbekannt (' . $s . ')';
+    }
+
+    // ---- Profiles + Variables ----
+
+    private function CreateProfiles()
+    {
+        $this->RegisterProfileIntegerEx('DRMV.ChargingStatus', '', '', '', array(
+            array(-1, 'Unbekannt', '', -1),
+            array(1,  'Lädt', '', 1),
+            array(2,  'Nicht am Laden', '', 2),
+            array(3,  'Voll geladen', '', 3),
+            array(5,  'Zur Station', '', 5),
+        ));
+
+        $this->RegisterProfileIntegerEx('DRMV.State', '', '', '', array(
+            array(0,  'Unbekannt', '', 0),
+            array(1,  'Bereit/Idle', '', 1),
+            array(2,  'Pausiert', '', 2),
+            array(3,  'Reinigt', '', 3),
+            array(4,  'Zurück zur Station', '', 4),
+            array(5,  'Andocken', '', 5),
+            array(6,  'Laden', '', 6),
+            array(7,  'Fehler', '', 7),
+            array(13, 'Laden', '', 13),
+        ));
+
+        $this->RegisterProfileIntegerEx('DRMV.ErrorCode', '', '', '', array(
+            array(-1, 'Unbekannt', '', -1),
+            array(0,  'Kein Fehler', '', 0),
+            array(1,  'Räder hängen', '', 1),
+            array(2,  'Abgrundsensor', '', 2),
+            array(3,  'Stoßfänger', '', 3),
+            array(4,  'Gesten-/Bewegungssensor', '', 4),
+            array(5,  'Stoßfänger (wiederholt)', '', 5),
+            array(6,  'Räder (wiederholt)', '', 6),
+        ));
+
+        $this->RegisterProfileInteger('DRMV.Minutes', '', '', ' min', 0, 0, 1);
+    }
+
+    private function CreateStatusVariables()
+    {
+        // Device info
+        $this->MaintainVariable('DeviceName', 'Name', VARIABLETYPE_STRING, '~TextBox', 10, true);
+        $this->MaintainVariable('Model', 'Model', VARIABLETYPE_STRING, '~TextBox', 11, true);
+        $this->MaintainVariable('Firmware', 'Firmware', VARIABLETYPE_STRING, '~TextBox', 12, true);
+        $this->MaintainVariable('Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 13, true);
+
+        // Status
+        $this->MaintainVariable('StateCode', 'Status (Code)', VARIABLETYPE_INTEGER, 'DRMV.State', 20, true);
+        $this->MaintainVariable('StateText', 'Status', VARIABLETYPE_STRING, '~TextBox', 21, true);
+
+        $this->MaintainVariable('ChargingStatus', 'Ladezustand (Code)', VARIABLETYPE_INTEGER, 'DRMV.ChargingStatus', 22, true);
+        $this->MaintainVariable('ChargingText', 'Ladezustand', VARIABLETYPE_STRING, '~TextBox', 23, true);
+
+        $this->MaintainVariable('Battery', 'Batterie', VARIABLETYPE_INTEGER, '~Battery.100', 24, true);
+
+        $this->MaintainVariable('ErrorCode', 'Fehler (Code)', VARIABLETYPE_INTEGER, 'DRMV.ErrorCode', 25, true);
+        $this->MaintainVariable('ErrorText', 'Fehler', VARIABLETYPE_STRING, '~TextBox', 26, true);
+
+        // Cleaning stats
+        $this->MaintainVariable('CleanTimeMin', 'Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 30, true);
+        $this->MaintainVariable('CleanAreaM2', 'Reinigungsfläche', VARIABLETYPE_FLOAT, '~SquareMeter', 31, true);
+
+        // Consumables (noch generisch – im nächsten Schritt benennen wir sie passend)
+        $this->MaintainVariable('Consumable1', 'Wartung 1', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
+        $this->MaintainVariable('Consumable2', 'Wartung 2', VARIABLETYPE_INTEGER, '~Intensity.100', 41, true);
+
+        $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
+    }
+
+    private function RegisterProfileInteger($Name, $Icon, $Prefix, $Suffix, $MinValue, $MaxValue, $StepSize)
+    {
+        if (!IPS_VariableProfileExists($Name)) {
+            IPS_CreateVariableProfile($Name, VARIABLETYPE_INTEGER);
+        }
+        IPS_SetVariableProfileIcon($Name, $Icon);
+        IPS_SetVariableProfileText($Name, $Prefix, $Suffix);
+        IPS_SetVariableProfileValues($Name, $MinValue, $MaxValue, $StepSize);
+    }
+
+    private function RegisterProfileIntegerEx($Name, $Icon, $Prefix, $Suffix, $Associations)
+    {
+        if (!IPS_VariableProfileExists($Name)) {
+            IPS_CreateVariableProfile($Name, VARIABLETYPE_INTEGER);
+        }
+        IPS_SetVariableProfileIcon($Name, $Icon);
+        IPS_SetVariableProfileText($Name, $Prefix, $Suffix);
+
+        // Clear old associations
+        $existing = IPS_GetVariableProfile($Name);
+        if (isset($existing['Associations']) && is_array($existing['Associations'])) {
+            foreach ($existing['Associations'] as $a) {
+                IPS_SetVariableProfileAssociation($Name, $a['Value'], '', '', -1);
+            }
+        }
+
+        foreach ($Associations as $Assoc) {
+            IPS_SetVariableProfileAssociation($Name, $Assoc[0], $Assoc[1], $Assoc[2], $Assoc[3]);
+        }
+    }
+
+    // ---- MIoT helpers (für später/Commands) ----
 
     public function GetProperties($propsJson)
     {
         $props = json_decode($propsJson, true);
-        if (!is_array($props)) throw new Exception('propsJson muss ein JSON Array sein, z.B. [[2,1],[3,1]]');
+        if (!is_array($props)) throw new Exception('propsJson must be JSON array, e.g. [[2,1],[3,1]]');
 
         $payload = array();
         foreach ($props as $p) {
@@ -161,9 +405,9 @@ class DreameVacuum extends IPSModule
     public function SetProperty($siid, $piid, $value)
     {
         $payload = array(array(
-            'did'   => $this->GetDID(),
-            'siid'  => (int)$siid,
-            'piid'  => (int)$piid,
+            'did' => $this->GetDID(),
+            'siid' => (int)$siid,
+            'piid' => (int)$piid,
             'value' => $value
         ));
         $result = $this->SendCommand('set_properties', $payload);
@@ -180,7 +424,7 @@ class DreameVacuum extends IPSModule
         if ($in === null) $in = array();
 
         $payload = array(
-            'did'  => $this->GetDID(),
+            'did' => $this->GetDID(),
             'siid' => (int)$siid,
             'aiid' => (int)$aiid,
             'in'   => $in
@@ -247,7 +491,6 @@ class DreameVacuum extends IPSModule
             if ($token !== '' && $exp > time()) return;
         }
 
-        // try refresh token first
         $refresh = trim($this->ReadPropertyString('RefreshToken'));
         if ($refresh === '') $refresh = $this->GetBuffer('RefreshToken');
 
@@ -255,11 +498,10 @@ class DreameVacuum extends IPSModule
             if ($this->LoginRefresh($refresh)) return;
         }
 
-        // fallback username/password
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
         if ($user === '' || $pass === '') throw new Exception('RefreshToken ungültig/leer und Username/Password fehlt');
-        if (!$this->LoginPassword($user, $pass)) throw new Exception('Login fehlgeschlagen');
+        if (!$this->LoginPassword($user, $pass)) throw new Exception('Login fehlgeschlagen (siehe LastResponse)');
     }
 
     private function LoginRefresh($refreshToken)
@@ -291,7 +533,6 @@ class DreameVacuum extends IPSModule
             if (isset($res['uid'])) $this->SetBuffer('Uuid', strval($res['uid']));
             return true;
         }
-
         return false;
     }
 
@@ -330,7 +571,6 @@ class DreameVacuum extends IPSModule
         $host = $this->GetBuffer('HostFromCloud');
         if ($host !== '') return $host;
 
-        // fetch now
         $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
         if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
             if (isset($info['data']['bindDomain'])) $host = strval($info['data']['bindDomain']);
@@ -340,7 +580,6 @@ class DreameVacuum extends IPSModule
                 return $host;
             }
         }
-
         return '';
     }
 
@@ -366,10 +605,10 @@ class DreameVacuum extends IPSModule
             'did' => $did,
             'id'  => $id,
             'data' => array(
-                'did'    => $did,
-                'id'     => $id,
+                'did' => $did,
+                'id'  => $id,
                 'method' => $method,
-                'params' => $params
+                'params'  => $params
             )
         );
 
@@ -381,8 +620,6 @@ class DreameVacuum extends IPSModule
         }
         return $res;
     }
-
-    // ---- HTTP helper ----
 
     private function HttpPostForm($url, $dataString)
     {
@@ -415,7 +652,7 @@ class DreameVacuum extends IPSModule
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSec);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
-        // Windows: vermeidet SSL-Probleme ohne CA Store
+        // Windows: CA-Probleme vermeiden
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 
