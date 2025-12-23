@@ -111,6 +111,36 @@
             "type": "Button",
             "caption": "Shortcuts laden (Profile & Variablen anlegen)",
             "onClick": "DRMV_UpdateShortcuts($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Start",
+            "onClick": "DRMV_StartCleaning($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Pause",
+            "onClick": "DRMV_PauseCleaning($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Stop",
+            "onClick": "DRMV_StopCleaning($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Zur Station",
+            "onClick": "DRMV_Dock($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Spot Clean",
+            "onClick": "DRMV_SpotClean($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Suchen / Beep",
+            "onClick": "DRMV_Locate($id);"
         }
     ]
 }
