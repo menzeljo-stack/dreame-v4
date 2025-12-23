@@ -1,34 +1,107 @@
 {
-  "elements": [
-    { "type": "Label", "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud." },
-    { "type": "ValidationTextBox", "name": "Region", "caption": "Region (z.B. eu)" },
-    {
-      "type": "Select",
-      "name": "AccountType",
-      "caption": "Account Type",
-      "options": [
-        { "caption": "dreame", "value": "dreame" },
-        { "caption": "mova", "value": "mova" },
-        { "caption": "trouver", "value": "trouver" }
-      ]
-    },
-    { "type": "ValidationTextBox", "name": "DID", "caption": "Device ID (did)" },
-    { "type": "ValidationTextBox", "name": "Host", "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)" },
-
-    { "type": "ValidationTextBox", "name": "AuthKey", "caption": "AuthKey (HA: auth_key / JWT) – empfohlen" },
-
-    { "type": "ValidationTextBox", "name": "RefreshToken", "caption": "Refresh Token (optional; falls vorhanden, NICHT auth_key)" },
-    { "type": "ValidationTextBox", "name": "Username", "caption": "Username (Fallback)" },
-    { "type": "PasswordTextBox", "name": "Password", "caption": "Password (Fallback)" },
-
-    { "type": "CheckBox", "name": "AutoCreateVariables", "caption": "Variablen automatisch anlegen" },
-    { "type": "NumberSpinner", "name": "StatusPollInterval", "caption": "Status Polling (Sek.)", "minimum": 10, "maximum": 3600 },
-    { "type": "NumberSpinner", "name": "DeviceInfoPollInterval", "caption": "DeviceInfo Polling (Sek.)", "minimum": 60, "maximum": 86400 },
-    { "type": "CheckBox", "name": "AutoUpdateDeviceInfo", "caption": "DeviceInfo automatisch aktualisieren" }
-  ],
-  "actions": [
-    { "type": "Button", "caption": "Login testen", "onClick": "DRMV_TestLogin($id);" },
-    { "type": "Button", "caption": "Status aktualisieren", "onClick": "DRMV_UpdateStatus($id);" },
-    { "type": "Button", "caption": "Geräteinfos aktualisieren", "onClick": "DRMV_UpdateDeviceInfo($id);" }
-  ]
+    "elements": [
+        {
+            "type": "Label",
+            "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud."
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Region",
+            "caption": "Region (z.B. eu)"
+        },
+        {
+            "type": "Select",
+            "name": "AccountType",
+            "caption": "Account Type",
+            "options": [
+                {
+                    "caption": "dreame",
+                    "value": "dreame"
+                },
+                {
+                    "caption": "mova",
+                    "value": "mova"
+                },
+                {
+                    "caption": "trouver",
+                    "value": "trouver"
+                }
+            ]
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "DID",
+            "caption": "Device ID (did)"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Host",
+            "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
+        },
+        {
+            "type": "Label",
+            "label": "Login: RefreshToken ODER Username/Password"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "RefreshToken",
+            "caption": "Refresh Token (optional)"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "Username",
+            "caption": "Username (Fallback)"
+        },
+        {
+            "type": "PasswordTextBox",
+            "name": "Password",
+            "caption": "Password (Fallback)"
+        },
+        {
+            "type": "CheckBox",
+            "name": "AutoCreateVariables",
+            "caption": "Variablen automatisch anlegen"
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "StatusPollInterval",
+            "caption": "Status Polling (Sek.)",
+            "minimum": 10,
+            "maximum": 3600
+        },
+        {
+            "type": "NumberSpinner",
+            "name": "DeviceInfoPollInterval",
+            "caption": "DeviceInfo Polling (Sek.)",
+            "minimum": 60,
+            "maximum": 86400
+        },
+        {
+            "type": "CheckBox",
+            "name": "AutoUpdateDeviceInfo",
+            "caption": "DeviceInfo automatisch aktualisieren"
+        }
+    ],
+    "actions": [
+        {
+            "type": "Button",
+            "caption": "Login testen",
+            "onClick": "DRMV_TestLogin($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Status aktualisieren",
+            "onClick": "DRMV_UpdateStatus($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Geräteinfos aktualisieren",
+            "onClick": "DRMV_UpdateDeviceInfo($id);"
+        },
+        {
+            "type": "Button",
+            "caption": "Shortcuts laden",
+            "onClick": "DRMV_UpdateShortcuts($id);"
+        }
+    ]
 }
