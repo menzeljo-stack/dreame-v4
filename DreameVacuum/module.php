@@ -12,7 +12,7 @@ class DreameVacuum extends IPSModule
     const PASSWORD_SALT       = 'RAylYC%fmSKp7%Tq';
     const AUTH_PATH           = '/dreame-auth/oauth/token';
 
-    // Basic-Auth (dreame_appv1:dreame_appv1)
+    // Basic Auth (dreame_appv1:dreame_appv1)
     const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ==';
     const TENANT_DEFAULT      = '000000';
 
@@ -38,25 +38,72 @@ class DreameVacuum extends IPSModule
     const UA_MOVA    = 'Mova_Smarthome/1.2.4 (iPhone; iOS 18.4.1; Scale/3.00)';
     const UA_TROUVER = 'Trouver_Smarthome/1.0.9 (iPhone; iOS 18.4.1; Scale/3.00)';
 
+    // --- Profile-Namen ---
+    const P_DEVICE_STATUS  = 'DRMV.DeviceStatus';
+    const P_CHARGING_STATE = 'DRMV.ChargingState';
+    const P_OPERATING_MODE = 'DRMV.OperatingMode';
+    const P_CLEANING_MODE  = 'DRMV.CleaningMode';
+    const P_WATER_FLOW     = 'DRMV.WaterFlow';
+    const P_FAULT_CODE     = 'DRMV.FaultCode';
+    const P_PERCENT        = 'DRMV.Percent';
+    const P_MINUTES        = 'DRMV.Minutes';
+    const P_HOURS          = 'DRMV.Hours';
+    const P_SQM            = 'DRMV.SquareMeter';
+
     public function Create()
     {
         parent::Create();
 
+        // Verbindung / Login
         $this->RegisterPropertyString('Region', 'eu');
         $this->RegisterPropertyString('AccountType', 'dreame'); // dreame|mova|trouver
         $this->RegisterPropertyString('DID', '');
-        $this->RegisterPropertyString('Host', '');             // e.g. 10000.mt.eu.iot.dreame.tech:19973
+        $this->RegisterPropertyString('Host', '');             // z.B. 10000.mt.eu.iot.dreame.tech:19973
         $this->RegisterPropertyString('RefreshToken', '');     // HA: auth_key
         $this->RegisterPropertyString('Username', '');
         $this->RegisterPropertyString('Password', '');
+
+        // Polling
         $this->RegisterPropertyInteger('PollInterval', 60);
 
-        // Diagnostics
+        // Debug / Status
         $this->RegisterVariableBoolean('Connected', 'Connected', '~Switch', 1);
         $this->RegisterVariableString('LastError', 'LastError', '~TextBox', 2);
         $this->RegisterVariableString('LastResponse', 'LastResponse', '~TextBox', 3);
 
-        // Timer
+        // Sinnige Status-Variablen
+        $this->RegisterVariableInteger('Battery', 'Batterie', '~Battery', 10);
+        $this->RegisterVariableInteger('ChargingState', 'Ladestatus', self::P_CHARGING_STATE, 11);
+
+        $this->RegisterVariableInteger('DeviceStatus', 'Status', self::P_DEVICE_STATUS, 12);
+        $this->RegisterVariableInteger('OperatingMode', 'Betriebsmodus', self::P_OPERATING_MODE, 13);
+        $this->RegisterVariableInteger('CleaningMode', 'Saugmodus', self::P_CLEANING_MODE, 14);
+        $this->RegisterVariableInteger('WaterFlow', 'Wasserfluss', self::P_WATER_FLOW, 15);
+
+        $this->RegisterVariableInteger('FaultCode', 'Fehlercode', self::P_FAULT_CODE, 16);
+        $this->RegisterVariableString('FaultText', 'Fehlertext', '~TextBox', 17);
+
+        $this->RegisterVariableInteger('CleaningTime', 'Reinigungszeit', self::P_MINUTES, 18);
+        $this->RegisterVariableFloat('CleaningArea', 'Reinigungsfläche', self::P_SQM, 19);
+
+        $this->RegisterVariableInteger('TotalCleanTime', 'Gesamtzeit', self::P_MINUTES, 20);
+        $this->RegisterVariableFloat('TotalCleanArea', 'Gesamtfläche', self::P_SQM, 21);
+        $this->RegisterVariableInteger('TotalCleanCount', 'Gesamtanzahl', '', 22);
+
+        $this->RegisterVariableInteger('MainBrushLife', 'Hauptbürste (%)', self::P_PERCENT, 30);
+        $this->RegisterVariableInteger('MainBrushLeft', 'Hauptbürste Rest', self::P_HOURS, 31);
+
+        $this->RegisterVariableInteger('SideBrushLife', 'Seitenbürste (%)', self::P_PERCENT, 32);
+        $this->RegisterVariableInteger('SideBrushLeft', 'Seitenbürste Rest', self::P_HOURS, 33);
+
+        $this->RegisterVariableInteger('FilterLife', 'Filter (%)', self::P_PERCENT, 34);
+        $this->RegisterVariableInteger('FilterLeft', 'Filter Rest', self::P_HOURS, 35);
+
+        $this->RegisterVariableInteger('Volume', 'Lautstärke', self::P_PERCENT, 40);
+
+        $this->RegisterVariableInteger('LastUpdate', 'Letztes Update', '~UnixTimestamp', 90);
+
+        // Timer: Status aktualisieren
         $this->RegisterTimer('UpdateTimer', 0, 'DRMV_UpdateStatus($_IPS["TARGET"]);');
     }
 
@@ -64,15 +111,14 @@ class DreameVacuum extends IPSModule
     {
         parent::ApplyChanges();
 
-        $this->CreateProfiles();
-        $this->CreateStatusVariables();
+        $this->EnsureProfiles();
 
         $interval = (int)$this->ReadPropertyInteger('PollInterval');
         if ($interval < 10) $interval = 10;
         $this->SetTimerInterval('UpdateTimer', $interval * 1000);
     }
 
-    // ---- UI actions ----
+    // ---------------- UI Buttons ----------------
 
     public function TestLogin()
     {
@@ -120,25 +166,21 @@ class DreameVacuum extends IPSModule
                     if (isset($data['bindDomain'])) $this->SetBuffer('HostFromCloud', strval($data['bindDomain']));
                     if (isset($data['host']))       $this->SetBuffer('HostFromCloud', strval($data['host']));
                 }
-
-                if (isset($data['model']))       SetValueString($this->GetIDForIdent('Model'), strval($data['model']));
-                if (isset($data['ver']))         SetValueString($this->GetIDForIdent('Firmware'), strval($data['ver']));
-                if (isset($data['customName']))  SetValueString($this->GetIDForIdent('DeviceName'), strval($data['customName']));
-                if (isset($data['online']))      SetValueBoolean($this->GetIDForIdent('Online'), (bool)$data['online']);
-
-                if (isset($data['model']))       $this->SetBuffer('Model', strval($data['model']));
-                if (isset($data['customName']))  $this->SetBuffer('CustomName', strval($data['customName']));
-                if (isset($data['masterUid']))   $this->SetBuffer('Uid', strval($data['masterUid']));
-                if (isset($data['uid']))         $this->SetBuffer('Uid', strval($data['uid']));
+                if (isset($data['model'])) $this->SetBuffer('Model', strval($data['model']));
             }
 
             $this->SetConnected(true);
             $this->SetLastError('Device info ok');
         } catch (Exception $e) {
-            $this->SendDebug('UpdateDeviceInfo', $e->getMessage(), 0);
             $this->SetConnected(false);
             $this->SetLastError($e->getMessage());
         }
+    }
+
+    // Kompatibilität: falls du irgendwo DRMV_Update($id) nutzt
+    public function Update()
+    {
+        $this->UpdateStatus();
     }
 
     public function UpdateStatus()
@@ -147,61 +189,165 @@ class DreameVacuum extends IPSModule
 
         try {
             $this->EnsureLoggedIn(false);
-            $this->EnsureHostLoaded();
 
-            // „Sinnige“ Status-Props (bei dir liefern diese bereits Werte)
+            // Wir fragen bewusst "mehr" ab und nehmen nur das, was mit code=0 zurückkommt.
+            // (Je nach Modell sind die SIID/PIID unterschiedlich.)
             $pairs = array(
-                array(2, 1),  // state
-                array(2, 2),  // error code
-                array(3, 1),  // battery
-                array(3, 2),  // charging status
-                array(9, 1),  // clean time / history (model dependent)
-                array(9, 2),  // clean area / history (model dependent)
-                array(11, 1), // consumable 1 (model dependent)
-                array(11, 2)  // consumable 2 (model dependent)
+                // Kandidaten: Batterie/Charge/Status/Fault (u.a. 1C vs F9 Varianten)
+                array(2,1), array(2,2), array(3,1), array(3,2),
+
+                // Cleaning / Mode (häufig siid=4)
+                array(4,1), array(4,2), array(4,3), array(4,4), array(4,5), array(4,6),
+
+                // Totals (häufig siid=12)
+                array(12,2), array(12,3), array(12,4),
+
+                // Consumables (häufig siid=9/10/11)
+                array(9,1), array(9,2),
+                array(10,1), array(10,2),
+                array(11,1), array(11,2),
+
+                // Consumables (Alternative 1C: 26/27/28)
+                array(26,1), array(26,2),
+                array(27,1), array(27,2),
+                array(28,1), array(28,2),
+
+                // Volume (je nach Modell 7:1 oder 24:1)
+                array(7,1), array(24,1)
             );
 
-            $payload = array();
-            foreach ($pairs as $p) {
-                $payload[] = array('did' => $this->GetDID(), 'siid' => (int)$p[0], 'piid' => (int)$p[1]);
+            $results = $this->MiotGetProperties($pairs, 10);
+            $this->SetLastResponse(json_encode($results));
+            $map = $this->ResultsToMap($results);
+
+            // --- Mapping-Autodetektion (wie in python-miio: je nach Modell anders) ---
+            $v21 = $this->GetValueFromMap($map, 2, 1);
+            $v31 = $this->GetValueFromMap($map, 3, 1);
+
+            $battery = null;
+            $charging = null;
+            $fault = null;
+            $status = null;
+
+            // Fall A (wie bei dir im Test): battery=2:1, charging=2:2, fault=3:1, status=3:2
+            if ($this->IsPercent($v21)) {
+                $battery = $v21;
+                $charging = $this->GetValueFromMap($map, 2, 2);
+                $fault    = $this->GetValueFromMap($map, 3, 1);
+                $status   = $this->GetValueFromMap($map, 3, 2);
+            } elseif ($this->IsPercent($v31)) {
+                // Fall B (F9-Style): battery=3:1, charging=3:2, fault=2:2, status=2:1
+                $battery = $v31;
+                $charging = $this->GetValueFromMap($map, 3, 2);
+                $fault    = $this->GetValueFromMap($map, 2, 2);
+                $status   = $this->GetValueFromMap($map, 2, 1);
+            } else {
+                // Fallback: nimm was da ist
+                $battery = $this->PickFirstPercent(array($v21, $v31));
+                $charging = $this->PickFirstInt(array(
+                    $this->GetValueFromMap($map, 2, 2),
+                    $this->GetValueFromMap($map, 3, 2)
+                ));
+                $status = $this->PickFirstInt(array(
+                    $this->GetValueFromMap($map, 3, 2),
+                    $this->GetValueFromMap($map, 2, 1)
+                ));
+                $fault = $this->PickFirstInt(array(
+                    $this->GetValueFromMap($map, 3, 1),
+                    $this->GetValueFromMap($map, 2, 2)
+                ));
             }
 
-            $result = $this->SendCommand('get_properties', $payload);
-            $this->SetLastResponse(json_encode($result));
+            if ($battery !== null) SetValueInteger($this->GetIDForIdent('Battery'), (int)$battery);
+            if ($charging !== null) SetValueInteger($this->GetIDForIdent('ChargingState'), (int)$charging);
+            if ($status !== null) SetValueInteger($this->GetIDForIdent('DeviceStatus'), (int)$status);
 
-            $map = array();
-            if (is_array($result)) {
-                foreach ($result as $item) {
-                    if (!is_array($item)) continue;
-                    if (!isset($item['siid']) || !isset($item['piid'])) continue;
-                    $key = strval($item['siid']) . ':' . strval($item['piid']);
-                    $map[$key] = $item;
-                }
+            if ($fault !== null) {
+                SetValueInteger($this->GetIDForIdent('FaultCode'), (int)$fault);
+                SetValueString($this->GetIDForIdent('FaultText'), ((int)$fault === 0) ? 'OK' : ('Code ' . (int)$fault));
             }
 
-            $state = $this->GetValueFromMap($map, '2:1');
-            $err   = $this->GetValueFromMap($map, '2:2');
-            $bat   = $this->GetValueFromMap($map, '3:1');
-            $chg   = $this->GetValueFromMap($map, '3:2');
-            $tmin  = $this->GetValueFromMap($map, '9:1');
-            $area  = $this->GetValueFromMap($map, '9:2');
-            $c1    = $this->GetValueFromMap($map, '11:1');
-            $c2    = $this->GetValueFromMap($map, '11:2');
+            // Cleaning / Modes: bevorzugt siid=4
+            $opMode = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 4, 1),
+                $this->GetValueFromMap($map, 18, 1)
+            ));
+            if ($opMode !== null) SetValueInteger($this->GetIDForIdent('OperatingMode'), (int)$opMode);
 
-            if ($bat !== null)   SetValueInteger($this->GetIDForIdent('Battery'), (int)$bat);
-            if ($chg !== null)   SetValueInteger($this->GetIDForIdent('ChargingStatus'), (int)$chg);
-            if ($err !== null)   SetValueInteger($this->GetIDForIdent('ErrorCode'), (int)$err);
-            if ($state !== null) SetValueInteger($this->GetIDForIdent('StateCode'), (int)$state);
+            $clMode = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 4, 4),
+                $this->GetValueFromMap($map, 18, 6)
+            ));
+            if ($clMode !== null) SetValueInteger($this->GetIDForIdent('CleaningMode'), (int)$clMode);
 
-            if ($tmin !== null)  SetValueInteger($this->GetIDForIdent('CleanTimeMin'), (int)$tmin);
-            if ($area !== null)  SetValueFloat($this->GetIDForIdent('CleanAreaM2'), (float)$area);
+            $water = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 4, 5)
+            ));
+            if ($water !== null) SetValueInteger($this->GetIDForIdent('WaterFlow'), (int)$water);
 
-            if ($c1 !== null)    SetValueInteger($this->GetIDForIdent('Consumable1'), (int)$c1);
-            if ($c2 !== null)    SetValueInteger($this->GetIDForIdent('Consumable2'), (int)$c2);
+            $ct = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 4, 2),
+                $this->GetValueFromMap($map, 18, 2)
+            ));
+            if ($ct !== null) SetValueInteger($this->GetIDForIdent('CleaningTime'), (int)$ct);
 
-            SetValueString($this->GetIDForIdent('StateText'), $this->StateToText($state, $chg, $err));
-            SetValueString($this->GetIDForIdent('ChargingText'), $this->ChargingToText($chg));
-            SetValueString($this->GetIDForIdent('ErrorText'), $this->ErrorToText($err));
+            $ca = $this->PickFirstNumber(array(
+                $this->GetValueFromMap($map, 4, 3),
+                $this->GetValueFromMap($map, 18, 4)
+            ));
+            if ($ca !== null) SetValueFloat($this->GetIDForIdent('CleaningArea'), (float)$ca);
+
+            // Totals (siid=12)
+            $tct = $this->GetValueFromMap($map, 12, 2);
+            if ($tct !== null) SetValueInteger($this->GetIDForIdent('TotalCleanTime'), (int)$tct);
+
+            $tcc = $this->GetValueFromMap($map, 12, 3);
+            if ($tcc !== null) SetValueInteger($this->GetIDForIdent('TotalCleanCount'), (int)$tcc);
+
+            $tca = $this->GetValueFromMap($map, 12, 4);
+            if ($tca !== null) SetValueFloat($this->GetIDForIdent('TotalCleanArea'), (float)$tca);
+
+            // Consumables: bevorzugt 9/10/11, fallback 26/27/28
+            $mainLeft = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 9, 1),
+                $this->GetValueFromMap($map, 26, 1)
+            ));
+            $mainLife = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 9, 2),
+                $this->GetValueFromMap($map, 26, 2)
+            ));
+            if ($mainLeft !== null) SetValueInteger($this->GetIDForIdent('MainBrushLeft'), (int)$mainLeft);
+            if ($mainLife !== null) SetValueInteger($this->GetIDForIdent('MainBrushLife'), (int)$mainLife);
+
+            $sideLeft = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 10, 1),
+                $this->GetValueFromMap($map, 28, 1)
+            ));
+            $sideLife = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 10, 2),
+                $this->GetValueFromMap($map, 28, 2)
+            ));
+            if ($sideLeft !== null) SetValueInteger($this->GetIDForIdent('SideBrushLeft'), (int)$sideLeft);
+            if ($sideLife !== null) SetValueInteger($this->GetIDForIdent('SideBrushLife'), (int)$sideLife);
+
+            $filterLife = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 11, 1),
+                $this->GetValueFromMap($map, 27, 1)
+            ));
+            $filterLeft = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 11, 2),
+                $this->GetValueFromMap($map, 27, 2)
+            ));
+            if ($filterLife !== null) SetValueInteger($this->GetIDForIdent('FilterLife'), (int)$filterLife);
+            if ($filterLeft !== null) SetValueInteger($this->GetIDForIdent('FilterLeft'), (int)$filterLeft);
+
+            // Volume
+            $vol = $this->PickFirstInt(array(
+                $this->GetValueFromMap($map, 7, 1),
+                $this->GetValueFromMap($map, 24, 1)
+            ));
+            if ($vol !== null) SetValueInteger($this->GetIDForIdent('Volume'), (int)$vol);
+
             SetValueInteger($this->GetIDForIdent('LastUpdate'), time());
 
             $this->SetConnected(true);
@@ -212,183 +358,12 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    private function GetValueFromMap($map, $key)
-    {
-        if (!isset($map[$key])) return null;
-        $item = $map[$key];
-        if (isset($item['code']) && (int)$item['code'] !== 0) return null;
-        if (!isset($item['value'])) return null;
-        return $item['value'];
-    }
-
-    // ---- Text mappings ----
-
-    private function ChargingToText($code)
-    {
-        if ($code === null) return '';
-        $c = (int)$code;
-        switch ($c) {
-            case 1: return 'Lädt';
-            case 2: return 'Nicht am Laden';
-            case 3: return 'Voll geladen';
-            case 5: return 'Zur Station';
-            default: return 'Unbekannt (' . $c . ')';
-        }
-    }
-
-    private function ErrorToText($code)
-    {
-        if ($code === null) return '';
-        $c = (int)$code;
-        if ($c === 0) return 'Kein Fehler';
-
-        $map = array(
-            1 => 'Räder hängen / angehoben',
-            2 => 'Abgrundsensor',
-            3 => 'Stoßfänger',
-            4 => 'Gesten-/Bewegungssensor',
-            5 => 'Stoßfänger (wiederholt)',
-            6 => 'Räder (wiederholt)'
-        );
-        if (isset($map[$c])) return $map[$c];
-
-        return 'Fehler (' . $c . ')';
-    }
-
-    private function StateToText($stateCode, $chargingCode, $errorCode)
-    {
-        $err = ($errorCode === null) ? 0 : (int)$errorCode;
-        if ($err > 0) return 'Fehler';
-
-        $chg = ($chargingCode === null) ? 0 : (int)$chargingCode;
-        if ($chg === 1) return 'Lädt';
-        if ($chg === 3) return 'Voll geladen';
-        if ($chg === 5) return 'Zur Station';
-
-        if ($stateCode === null) return '';
-        $s = (int)$stateCode;
-
-        $map = array(
-            0  => 'Unbekannt',
-            1  => 'Bereit/Idle',
-            2  => 'Pausiert',
-            3  => 'Reinigt',
-            4  => 'Zurück zur Station',
-            5  => 'Andocken',
-            6  => 'Laden',
-            7  => 'Fehler',
-            13 => 'Laden'
-        );
-        if (isset($map[$s])) return $map[$s];
-        return 'Unbekannt (' . $s . ')';
-    }
-
-    // ---- Profiles + Variables ----
-
-    private function CreateProfiles()
-    {
-        $this->RegisterProfileIntegerEx('DRMV.ChargingStatus', '', '', '', array(
-            array(-1, 'Unbekannt', '', -1),
-            array(1,  'Lädt', '', 1),
-            array(2,  'Nicht am Laden', '', 2),
-            array(3,  'Voll geladen', '', 3),
-            array(5,  'Zur Station', '', 5),
-        ));
-
-        $this->RegisterProfileIntegerEx('DRMV.State', '', '', '', array(
-            array(0,  'Unbekannt', '', 0),
-            array(1,  'Bereit/Idle', '', 1),
-            array(2,  'Pausiert', '', 2),
-            array(3,  'Reinigt', '', 3),
-            array(4,  'Zurück zur Station', '', 4),
-            array(5,  'Andocken', '', 5),
-            array(6,  'Laden', '', 6),
-            array(7,  'Fehler', '', 7),
-            array(13, 'Laden', '', 13),
-        ));
-
-        $this->RegisterProfileIntegerEx('DRMV.ErrorCode', '', '', '', array(
-            array(-1, 'Unbekannt', '', -1),
-            array(0,  'Kein Fehler', '', 0),
-            array(1,  'Räder hängen', '', 1),
-            array(2,  'Abgrundsensor', '', 2),
-            array(3,  'Stoßfänger', '', 3),
-            array(4,  'Gesten-/Bewegungssensor', '', 4),
-            array(5,  'Stoßfänger (wiederholt)', '', 5),
-            array(6,  'Räder (wiederholt)', '', 6),
-        ));
-
-        $this->RegisterProfileInteger('DRMV.Minutes', '', '', ' min', 0, 0, 1);
-    }
-
-    private function CreateStatusVariables()
-    {
-        // Device info
-        $this->MaintainVariable('DeviceName', 'Name', VARIABLETYPE_STRING, '~TextBox', 10, true);
-        $this->MaintainVariable('Model', 'Model', VARIABLETYPE_STRING, '~TextBox', 11, true);
-        $this->MaintainVariable('Firmware', 'Firmware', VARIABLETYPE_STRING, '~TextBox', 12, true);
-        $this->MaintainVariable('Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 13, true);
-
-        // Status
-        $this->MaintainVariable('StateCode', 'Status (Code)', VARIABLETYPE_INTEGER, 'DRMV.State', 20, true);
-        $this->MaintainVariable('StateText', 'Status', VARIABLETYPE_STRING, '~TextBox', 21, true);
-
-        $this->MaintainVariable('ChargingStatus', 'Ladezustand (Code)', VARIABLETYPE_INTEGER, 'DRMV.ChargingStatus', 22, true);
-        $this->MaintainVariable('ChargingText', 'Ladezustand', VARIABLETYPE_STRING, '~TextBox', 23, true);
-
-        $this->MaintainVariable('Battery', 'Batterie', VARIABLETYPE_INTEGER, '~Battery.100', 24, true);
-
-        $this->MaintainVariable('ErrorCode', 'Fehler (Code)', VARIABLETYPE_INTEGER, 'DRMV.ErrorCode', 25, true);
-        $this->MaintainVariable('ErrorText', 'Fehler', VARIABLETYPE_STRING, '~TextBox', 26, true);
-
-        // Cleaning stats
-        $this->MaintainVariable('CleanTimeMin', 'Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 30, true);
-        $this->MaintainVariable('CleanAreaM2', 'Reinigungsfläche', VARIABLETYPE_FLOAT, '~SquareMeter', 31, true);
-
-        // Consumables (noch generisch – im nächsten Schritt benennen wir sie passend)
-        $this->MaintainVariable('Consumable1', 'Wartung 1', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
-        $this->MaintainVariable('Consumable2', 'Wartung 2', VARIABLETYPE_INTEGER, '~Intensity.100', 41, true);
-
-        $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
-    }
-
-    private function RegisterProfileInteger($Name, $Icon, $Prefix, $Suffix, $MinValue, $MaxValue, $StepSize)
-    {
-        if (!IPS_VariableProfileExists($Name)) {
-            IPS_CreateVariableProfile($Name, VARIABLETYPE_INTEGER);
-        }
-        IPS_SetVariableProfileIcon($Name, $Icon);
-        IPS_SetVariableProfileText($Name, $Prefix, $Suffix);
-        IPS_SetVariableProfileValues($Name, $MinValue, $MaxValue, $StepSize);
-    }
-
-    private function RegisterProfileIntegerEx($Name, $Icon, $Prefix, $Suffix, $Associations)
-    {
-        if (!IPS_VariableProfileExists($Name)) {
-            IPS_CreateVariableProfile($Name, VARIABLETYPE_INTEGER);
-        }
-        IPS_SetVariableProfileIcon($Name, $Icon);
-        IPS_SetVariableProfileText($Name, $Prefix, $Suffix);
-
-        // Clear old associations
-        $existing = IPS_GetVariableProfile($Name);
-        if (isset($existing['Associations']) && is_array($existing['Associations'])) {
-            foreach ($existing['Associations'] as $a) {
-                IPS_SetVariableProfileAssociation($Name, $a['Value'], '', '', -1);
-            }
-        }
-
-        foreach ($Associations as $Assoc) {
-            IPS_SetVariableProfileAssociation($Name, $Assoc[0], $Assoc[1], $Assoc[2], $Assoc[3]);
-        }
-    }
-
-    // ---- MIoT helpers (für später/Commands) ----
+    // ---------------- Public scripting helpers (optional) ----------------
 
     public function GetProperties($propsJson)
     {
         $props = json_decode($propsJson, true);
-        if (!is_array($props)) throw new Exception('propsJson must be JSON array, e.g. [[2,1],[3,1]]');
+        if (!is_array($props)) throw new Exception('propsJson must be JSON array, z.B. [[2,1],[3,2]]');
 
         $payload = array();
         foreach ($props as $p) {
@@ -451,7 +426,186 @@ class DreameVacuum extends IPSModule
         return $out;
     }
 
-    // ---- Core helpers ----
+    // ---------------- Profiles & helpers ----------------
+
+    private function EnsureProfiles()
+    {
+        // DeviceStatus (Werte wie in python-miio) :contentReference[oaicite:0]{index=0}
+        $this->EnsureProfileInteger(self::P_DEVICE_STATUS, '', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 0, 'Unbekannt', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 1, 'Saugen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 2, 'Bereit', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 3, 'Pausiert', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 4, 'Fehler', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 5, 'Zur Station', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 6, 'Lädt', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 7, 'Wischen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 8, 'Trocknen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 9, 'Waschen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 10, 'Zurück zum Waschen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 11, 'Karte erstellen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 12, 'Saugen & Wischen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 13, 'Voll geladen', '');
+        $this->SetAssoc(self::P_DEVICE_STATUS, 14, 'Update', '');
+
+        // ChargingState :contentReference[oaicite:1]{index=1}
+        $this->EnsureProfileInteger(self::P_CHARGING_STATE, '', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, -1, 'Unbekannt', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 0, 'Unbekannt', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 1, 'Lädt', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 2, 'Entlädt', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 3, 'Voll', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 4, 'Lädt (2)', '');
+        $this->SetAssoc(self::P_CHARGING_STATE, 5, 'Zur Station', '');
+
+        // OperatingMode :contentReference[oaicite:2]{index=2}
+        $this->EnsureProfileInteger(self::P_OPERATING_MODE, '', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 0, 'Unbekannt', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 1, 'Pausiert', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 2, 'Reinigt', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 3, 'Zur Station', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 6, 'Lädt', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 13, 'Manuell', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 14, 'Schläft', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 17, 'Manuell pausiert', '');
+        $this->SetAssoc(self::P_OPERATING_MODE, 19, 'Zonenreinigung', '');
+
+        // CleaningMode :contentReference[oaicite:3]{index=3}
+        $this->EnsureProfileInteger(self::P_CLEANING_MODE, '', '');
+        $this->SetAssoc(self::P_CLEANING_MODE, 0, 'Leise', '');
+        $this->SetAssoc(self::P_CLEANING_MODE, 1, 'Standard', '');
+        $this->SetAssoc(self::P_CLEANING_MODE, 2, 'Stark', '');
+        $this->SetAssoc(self::P_CLEANING_MODE, 3, 'Turbo', '');
+
+        // WaterFlow :contentReference[oaicite:4]{index=4}
+        $this->EnsureProfileInteger(self::P_WATER_FLOW, '', '');
+        $this->SetAssoc(self::P_WATER_FLOW, 0, 'Unbekannt', '');
+        $this->SetAssoc(self::P_WATER_FLOW, 1, 'Niedrig', '');
+        $this->SetAssoc(self::P_WATER_FLOW, 2, 'Mittel', '');
+        $this->SetAssoc(self::P_WATER_FLOW, 3, 'Hoch', '');
+
+        // FaultCode: nur 0=OK, Rest als Code sichtbar
+        $this->EnsureProfileInteger(self::P_FAULT_CODE, '', '');
+        $this->SetAssoc(self::P_FAULT_CODE, 0, 'OK', '');
+
+        // Prozent / Minuten / Stunden / m²
+        $this->EnsureProfileInteger(self::P_PERCENT, '', ' %', 0, 100, 0);
+        $this->EnsureProfileInteger(self::P_MINUTES, '', ' min', 0, 6000, 0);
+        $this->EnsureProfileInteger(self::P_HOURS, '', ' h', 0, 6000, 0);
+        $this->EnsureProfileFloat(self::P_SQM, '', ' m²', 0, 20000, 0, 1);
+    }
+
+    private function EnsureProfileInteger($name, $prefix, $suffix, $min = 0, $max = 0, $step = 0)
+    {
+        if (!IPS_VariableProfileExists($name)) {
+            IPS_CreateVariableProfile($name, 1);
+        }
+        if ($min != 0 || $max != 0 || $step != 0) {
+            IPS_SetVariableProfileValues($name, $min, $max, $step);
+        }
+        IPS_SetVariableProfileText($name, $prefix, $suffix);
+    }
+
+    private function EnsureProfileFloat($name, $prefix, $suffix, $min = 0.0, $max = 0.0, $step = 0.0, $digits = 1)
+    {
+        if (!IPS_VariableProfileExists($name)) {
+            IPS_CreateVariableProfile($name, 2);
+        }
+        IPS_SetVariableProfileValues($name, $min, $max, $step);
+        IPS_SetVariableProfileDigits($name, $digits);
+        IPS_SetVariableProfileText($name, $prefix, $suffix);
+    }
+
+    private function SetAssoc($profile, $value, $text, $icon)
+    {
+        // Verhindert doppelte Associations: Symcon überschreibt bei gleicher value
+        IPS_SetVariableProfileAssociation($profile, (int)$value, (string)$text, (string)$icon, -1);
+    }
+
+    private function ResultsToMap($results)
+    {
+        $map = array();
+        if (!is_array($results)) return $map;
+
+        foreach ($results as $item) {
+            if (!is_array($item)) continue;
+            if (!isset($item['siid']) || !isset($item['piid'])) continue;
+            $key = (int)$item['siid'] . ':' . (int)$item['piid'];
+            $map[$key] = $item;
+        }
+        return $map;
+    }
+
+    private function GetValueFromMap($map, $siid, $piid)
+    {
+        $key = (int)$siid . ':' . (int)$piid;
+        if (!isset($map[$key])) return null;
+        $item = $map[$key];
+        if (!is_array($item)) return null;
+        if (isset($item['code']) && (int)$item['code'] !== 0) return null;
+        if (!array_key_exists('value', $item)) return null;
+        return $item['value'];
+    }
+
+    private function IsPercent($v)
+    {
+        if ($v === null) return false;
+        if (!is_numeric($v)) return false;
+        $i = (int)$v;
+        return ($i >= 0 && $i <= 100);
+    }
+
+    private function PickFirstPercent($arr)
+    {
+        foreach ($arr as $v) {
+            if ($this->IsPercent($v)) return (int)$v;
+        }
+        return null;
+    }
+
+    private function PickFirstInt($arr)
+    {
+        foreach ($arr as $v) {
+            if ($v === null) continue;
+            if (is_numeric($v)) return (int)$v;
+        }
+        return null;
+    }
+
+    private function PickFirstNumber($arr)
+    {
+        foreach ($arr as $v) {
+            if ($v === null) continue;
+            if (is_numeric($v)) return $v;
+        }
+        return null;
+    }
+
+    // ---------------- MIoT batching ----------------
+
+    private function MiotGetProperties($pairs, $chunkSize)
+    {
+        $did = $this->GetDID();
+        $all = array();
+
+        $chunk = array();
+        foreach ($pairs as $p) {
+            $chunk[] = array('did' => $did, 'siid' => (int)$p[0], 'piid' => (int)$p[1]);
+            if (count($chunk) >= $chunkSize) {
+                $res = $this->SendCommand('get_properties', $chunk);
+                if (is_array($res)) $all = array_merge($all, $res);
+                $chunk = array();
+            }
+        }
+        if (count($chunk) > 0) {
+            $res = $this->SendCommand('get_properties', $chunk);
+            if (is_array($res)) $all = array_merge($all, $res);
+        }
+
+        return $all;
+    }
+
+    // ---------------- Core helpers ----------------
 
     private function GetDID()
     {
@@ -491,6 +645,7 @@ class DreameVacuum extends IPSModule
             if ($token !== '' && $exp > time()) return;
         }
 
+        // try refresh token first
         $refresh = trim($this->ReadPropertyString('RefreshToken'));
         if ($refresh === '') $refresh = $this->GetBuffer('RefreshToken');
 
@@ -498,6 +653,7 @@ class DreameVacuum extends IPSModule
             if ($this->LoginRefresh($refresh)) return;
         }
 
+        // fallback username/password
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
         if ($user === '' || $pass === '') throw new Exception('RefreshToken ungültig/leer und Username/Password fehlt');
@@ -509,6 +665,12 @@ class DreameVacuum extends IPSModule
         $data = self::LOGIN_PREFIX . self::LOGIN_REFRESH . $refreshToken;
         $res = $this->HttpPostForm($this->GetApiBase() . self::AUTH_PATH, $data);
         $this->SetBuffer('LastLoginResponse', json_encode($res));
+
+        // Wenn RefreshToken invalid ist, versuchen wir später Passwort
+        if (is_array($res) && isset($res['error_description']) && stripos($res['error_description'], 'refresh token') !== false) {
+            $this->SetBuffer('RefreshToken', '');
+            return false;
+        }
         return $this->HandleLoginResponse($res);
     }
 
@@ -536,7 +698,7 @@ class DreameVacuum extends IPSModule
         return false;
     }
 
-    private function ApiCall($path, $payload)
+    private function ApiCall($path, $payload, $retry401 = true)
     {
         $this->EnsureLoggedIn(false);
 
@@ -560,7 +722,32 @@ class DreameVacuum extends IPSModule
             $headers[] = self::HDR_DREAME_RLC . ': ' . self::DREAME_RLC_VALUE;
         }
 
-        return $this->CurlPost($url, json_encode($payload), $headers, 15);
+        $res = $this->CurlPost($url, json_encode($payload), $headers, 15);
+
+        // 401 -> Token evtl. abgelaufen: einmal neu einloggen und retry
+        if ($retry401 && is_array($res) && isset($res['_http_status']) && (int)$res['_http_status'] === 401) {
+            $this->SetBuffer('AccessToken', '');
+            $this->SetBuffer('AccessTokenExpire', '0');
+            $this->EnsureLoggedIn(true);
+
+            $headers = array(
+                'Accept: */*',
+                'Accept-Language: en-US;q=0.8',
+                'Accept-Encoding: gzip, deflate',
+                self::HDR_USER_AGENT . ': ' . $this->GetUserAgent(),
+                self::HDR_AUTHORIZATION . ': ' . self::AUTHORIZATION_VALUE,
+                self::HDR_TENANT . ': ' . $tenant,
+                self::HDR_DREAME_AUTH . ': ' . $this->GetBuffer('AccessToken'),
+                'Content-Type: application/json'
+            );
+            if (strtolower(trim($this->ReadPropertyString('Region'))) === 'cn') {
+                $headers[] = self::HDR_DREAME_RLC . ': ' . self::DREAME_RLC_VALUE;
+            }
+
+            $res = $this->CurlPost($url, json_encode($payload), $headers, 15);
+        }
+
+        return $res;
     }
 
     private function EnsureHostLoaded()
@@ -571,6 +758,7 @@ class DreameVacuum extends IPSModule
         $host = $this->GetBuffer('HostFromCloud');
         if ($host !== '') return $host;
 
+        // fetch now
         $info = $this->ApiCall('dreame-user-iot/iotuserbind/device/info', array('did' => $this->GetDID()));
         if (is_array($info) && isset($info['code']) && (int)$info['code'] === 0 && isset($info['data']) && is_array($info['data'])) {
             if (isset($info['data']['bindDomain'])) $host = strval($info['data']['bindDomain']);
@@ -621,6 +809,8 @@ class DreameVacuum extends IPSModule
         return $res;
     }
 
+    // ---- HTTP helper ----
+
     private function HttpPostForm($url, $dataString)
     {
         $tenant = $this->GetBuffer('TenantId');
@@ -652,7 +842,7 @@ class DreameVacuum extends IPSModule
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSec);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
-        // Windows: CA-Probleme vermeiden
+        // Windows: CA Store ist oft zickig
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 
