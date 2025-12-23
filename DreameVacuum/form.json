@@ -50,7 +50,7 @@
         {
             "type": "ValidationTextBox",
             "name": "RefreshToken",
-            "caption": "Refresh Token (optional; falls wirklich vorhanden)"
+            "caption": "Refresh Token (optional; nur wenn du wirklich einen hast)"
         },
         {
             "type": "ValidationTextBox",
@@ -85,6 +85,10 @@
             "type": "CheckBox",
             "name": "AutoUpdateDeviceInfo",
             "caption": "DeviceInfo automatisch aktualisieren"
+        },
+        {
+            "type": "Label",
+            "label": "Visualisierung: \n• Command-Variable: Start/Pause/Stop/Zur Station/Spot/Beep.\n• Shortcuts: (A) Auswahl + separater Start-Button, und (B) pro Shortcut ein eigener Schalter.\nHinweis: Shortcuts werden bei „Shortcuts laden“ automatisch als Variablen angelegt."
         }
     ],
     "actions": [
@@ -105,7 +109,7 @@
         },
         {
             "type": "Button",
-            "caption": "Shortcuts laden",
+            "caption": "Shortcuts laden (Profile & Variablen anlegen)",
             "onClick": "DRMV_UpdateShortcuts($id);"
         }
     ]
