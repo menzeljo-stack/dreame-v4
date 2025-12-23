@@ -101,7 +101,6 @@ class DreameVacuum extends IPSModule
     // Visualisierung/Bedienung: Variablenaktionen abfangen
     public function RequestAction($Ident, $Value)
     {
-        // Command selector
         if ($Ident === 'Command') {
             $cmd = (int)$Value;
             try {
@@ -114,7 +113,6 @@ class DreameVacuum extends IPSModule
                     case 6: $this->Locate(); break;
                     default: break;
                 }
-                // reset selector to 0 (Idle)
                 $vid = @$this->GetIDForIdent('Command');
                 if ($vid) SetValueInteger($vid, 0);
             } catch (Exception $e) {
@@ -123,14 +121,12 @@ class DreameVacuum extends IPSModule
             return;
         }
 
-        // Shortcut select (dropdown)
         if ($Ident === 'ShortcutSelected') {
             $vid = @$this->GetIDForIdent('ShortcutSelected');
             if ($vid) SetValueInteger($vid, (int)$Value);
             return;
         }
 
-        // Start selected shortcut (button)
         if ($Ident === 'StartSelectedShortcut') {
             $on = (bool)$Value;
             if ($on) {
@@ -147,7 +143,6 @@ class DreameVacuum extends IPSModule
             return;
         }
 
-        // Per-shortcut button variables: SC_<id>
         if (strpos($Ident, 'SC_') === 0) {
             $on = (bool)$Value;
             $sid = (int)substr($Ident, 3);
@@ -243,7 +238,7 @@ class DreameVacuum extends IPSModule
                 array('siid' => 4,  'piid' => 2),
                 array('siid' => 4,  'piid' => 3),
                 array('siid' => 4,  'piid' => 23),
-                array('siid' => 4,  'piid' => 48), // shortcuts list
+                array('siid' => 4,  'piid' => 48),
 
                 array('siid' => 9,  'piid' => 1),
                 array('siid' => 9,  'piid' => 2),
@@ -478,7 +473,6 @@ class DreameVacuum extends IPSModule
         $b = base64_decode($s, true);
         if ($b === false) return $s;
 
-        // Heuristic: if decoded has control chars -> keep original
         $ctrl = 0;
         for ($i = 0; $i < strlen($b); $i++) {
             $o = ord($b[$i]);
@@ -525,7 +519,6 @@ class DreameVacuum extends IPSModule
             IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
         }
 
-        // Always include "—"
         IPS_SetVariableProfileAssociation($name, 0, '—', '', 0);
 
         if (!is_array($shortcuts)) return;
@@ -537,18 +530,24 @@ class DreameVacuum extends IPSModule
         }
     }
 
+    /**
+     * IMPORTANT FIX:
+     * IP-Symcon expects IPS_SetVariableCustomAction() to point to a SCRIPT.
+     * Therefore we keep the real shortcut-variables directly under the instance (MaintainVariable + EnableAction),
+     * and only create LINKS in the "Shortcuts" category for nicer visualization.
+     */
     private function EnsureShortcutVariables($shortcuts)
     {
         if (!is_array($shortcuts)) return;
 
-        // A) Selection + start button
+        // A) Selection + start button (instance vars)
         $this->MaintainVariable('ShortcutSelected', 'Shortcut auswählen', VARIABLETYPE_INTEGER, 'DRMV.Shortcuts', 100, true);
         $this->EnableAction('ShortcutSelected');
 
         $this->MaintainVariable('StartSelectedShortcut', 'Shortcut starten', VARIABLETYPE_BOOLEAN, '~Switch', 101, true);
         $this->EnableAction('StartSelectedShortcut');
 
-        // B) Per-shortcut switches under a subcategory
+        // B) Per-shortcut "buttons" (instance vars) + links in category
         $catId = $this->EnsureCategory('Shortcuts', 'Shortcuts', 200);
 
         $pos = 1;
@@ -558,8 +557,14 @@ class DreameVacuum extends IPSModule
             $name = isset($sc['name']) ? (string)$sc['name'] : ('Shortcut ' . $id);
             $ident = 'SC_' . $id;
 
-            $varId = $this->EnsureVariable($ident, $name, VARIABLETYPE_BOOLEAN, '~Switch', $pos, $catId);
-            IPS_SetVariableCustomAction($varId, $this->InstanceID);
+            // real variable under instance
+            $this->MaintainVariable($ident, $name, VARIABLETYPE_BOOLEAN, '~Switch', 210 + $pos, true);
+            $this->EnableAction($ident);
+
+            // link under category for visualization
+            $varId = @$this->GetIDForIdent($ident);
+            if ($varId) $this->EnsureLink('L_' . $ident, $name, $varId, $catId, $pos);
+
             $pos++;
         }
     }
@@ -581,18 +586,17 @@ class DreameVacuum extends IPSModule
         return $id;
     }
 
-    private function EnsureVariable($ident, $name, $type, $profile, $pos, $parentId)
+    private function EnsureLink($ident, $name, $targetId, $parentId, $pos)
     {
         $id = @IPS_GetObjectIDByIdent($ident, $parentId);
         if (!$id || $id <= 0) {
-            $id = IPS_CreateVariable($type);
+            $id = IPS_CreateLink();
             IPS_SetParent($id, $parentId);
             IPS_SetIdent($id, $ident);
         }
-
         IPS_SetName($id, $name);
         IPS_SetPosition($id, $pos);
-        if ($profile !== '') IPS_SetVariableCustomProfile($id, $profile);
+        IPS_SetLinkTargetID($id, $targetId);
         return $id;
     }
 
@@ -627,7 +631,6 @@ class DreameVacuum extends IPSModule
             6 => 'Suchen / Beep'
         ));
 
-        // Shortcut select profile (will be filled/updated when shortcuts are loaded)
         if (!IPS_VariableProfileExists('DRMV.Shortcuts')) {
             IPS_CreateVariableProfile('DRMV.Shortcuts', VARIABLETYPE_INTEGER);
             IPS_SetVariableProfileAssociation('DRMV.Shortcuts', 0, '—', '', 0);
@@ -730,7 +733,6 @@ class DreameVacuum extends IPSModule
         return 'https://' . $region . $this->GetDomainSuffix() . ':' . self::API_PORT;
     }
 
-    // auth_key handling: treat as access token (JWT)
     private function MaybeUseAuthKeyAsAccessToken()
     {
         $authKey = trim($this->ReadPropertyString('AuthKey'));
