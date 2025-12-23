@@ -1,8 +1,14 @@
 {
   "elements": [
-    { "type": "Label", "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud." },
-
-    { "type": "ValidationTextBox", "name": "Region", "caption": "Region (z.B. eu)" },
+    {
+      "type": "Label",
+      "label": "Dreame Vacuum – direkte Anbindung an die Dreame Cloud."
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Region",
+      "caption": "Region (z.B. eu)"
+    },
     {
       "type": "Select",
       "name": "AccountType",
@@ -13,20 +19,59 @@
         { "caption": "trouver", "value": "trouver" }
       ]
     },
-
-    { "type": "ValidationTextBox", "name": "DID", "caption": "Device ID (did)" },
-    { "type": "ValidationTextBox", "name": "Host", "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)" },
-    { "type": "ValidationTextBox", "name": "RefreshToken", "caption": "RefreshToken (aus HA: auth_key) – empfohlen" },
-
-    { "type": "ValidationTextBox", "name": "Username", "caption": "Username (Fallback)" },
-    { "type": "PasswordTextBox", "name": "Password", "caption": "Password (Fallback)" },
-
-    { "type": "NumberSpinner", "name": "PollInterval", "caption": "Polling (Sek.)", "minimum": 10, "maximum": 3600 }
+    {
+      "type": "ValidationTextBox",
+      "name": "DID",
+      "caption": "Device ID (did)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Host",
+      "caption": "Host/BindDomain (optional, z.B. 10000.mt.eu.iot.dreame.tech:19973)"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "RefreshToken",
+      "caption": "RefreshToken (aus HA: auth_key) – empfohlen"
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "Username",
+      "caption": "Username (Fallback)"
+    },
+    {
+      "type": "PasswordTextBox",
+      "name": "Password",
+      "caption": "Password (Fallback)"
+    },
+    {
+      "type": "NumberSpinner",
+      "name": "PollInterval",
+      "caption": "Polling (Sek.)",
+      "minimum": 10,
+      "maximum": 3600
+    }
   ],
   "actions": [
-    { "type": "Button", "caption": "Login testen", "onClick": "DRMV_TestLogin($id);" },
-    { "type": "Button", "caption": "Geräteinfos aktualisieren", "onClick": "DRMV_UpdateDeviceInfo($id);" },
-    { "type": "Button", "caption": "Status aktualisieren", "onClick": "DRMV_UpdateStatus($id);" },
-    { "type": "Button", "caption": "Raw: device/info", "onClick": "DRMV_DebugDeviceInfo($id);" }
+    {
+      "type": "Button",
+      "caption": "Login testen",
+      "onClick": "DRMV_TestLogin($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Geräteinfos aktualisieren",
+      "onClick": "DRMV_UpdateDeviceInfo($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Status aktualisieren",
+      "onClick": "DRMV_UpdateStatus($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Raw: device/info",
+      "onClick": "DRMV_DebugDeviceInfo($id);"
+    }
   ]
 }
