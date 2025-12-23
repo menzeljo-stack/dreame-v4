@@ -45,6 +45,10 @@ class DreameVacuum extends IPSModule
     const CMD_SHORTCUT   = 25;
     const CMD_ROOMS      = 18;
 
+    // fixed for Johannes: Betriebsmodus = 4-23
+    const MODE_SIID = 4;
+    const MODE_PIID = 23;
+
     public function Create()
     {
         parent::Create();
@@ -72,6 +76,9 @@ class DreameVacuum extends IPSModule
 
         $this->RegisterTimer('StatusTimer', 0, 'DRMV_UpdateStatus($_IPS["TARGET"]);');
         $this->RegisterTimer('DeviceInfoTimer', 0, 'DRMV_UpdateDeviceInfo($_IPS["TARGET"]);');
+
+        // one-shot refresh after any command (to catch delayed mode/status updates)
+        $this->RegisterTimer('PostCommandTimer', 0, 'DRMV_PostCommandRefresh($_IPS["TARGET"]);');
     }
 
     public function ApplyChanges()
@@ -221,15 +228,25 @@ class DreameVacuum extends IPSModule
         }
     }
 
+    public function PostCommandRefresh()
+    {
+        // one-shot timer
+        $this->SetTimerInterval('PostCommandTimer', 0);
+        $this->UpdateStatus();
+    }
+
+    private function SchedulePostCommandRefresh($ms = 5000)
+    {
+        // schedule in 5s (cloud sometimes updates mode with delay)
+        $this->SetTimerInterval('PostCommandTimer', (int)$ms);
+    }
+
     public function UpdateStatus()
     {
         $this->SetLastError('');
         try {
             $this->EnsureLoggedIn(false);
             if ($this->ReadPropertyBoolean('AutoCreateVariables')) $this->EnsureVariables();
-
-            // Betriebsmodus (CleaningMode) differs by model -> request several candidates
-            $modeCandidates = array(23, 4, 7, 14, 20, 21, 22);
 
             $props = array(
                 array('siid' => 2,  'piid' => 1),
@@ -239,7 +256,12 @@ class DreameVacuum extends IPSModule
 
                 array('siid' => 4,  'piid' => 2),
                 array('siid' => 4,  'piid' => 3),
-                array('siid' => 4,  'piid' => 48), // shortcuts list
+
+                // Betriebsmodus (confirmed: 4-23)
+                array('siid' => self::MODE_SIID, 'piid' => self::MODE_PIID),
+
+                // Shortcuts list
+                array('siid' => 4,  'piid' => 48),
 
                 array('siid' => 9,  'piid' => 1),
                 array('siid' => 9,  'piid' => 2),
@@ -248,10 +270,6 @@ class DreameVacuum extends IPSModule
                 array('siid' => 11, 'piid' => 1),
                 array('siid' => 11, 'piid' => 2),
             );
-
-            foreach ($modeCandidates as $piid) {
-                $props[] = array('siid' => 4, 'piid' => (int)$piid);
-            }
 
             $payload = array();
             foreach ($props as $p) {
@@ -262,8 +280,6 @@ class DreameVacuum extends IPSModule
             $this->SetLastResponse(json_encode($result));
 
             if (!is_array($result)) throw new Exception('Unerwartete Antwort bei get_properties');
-
-            $foundModes = array(); // piid => value
 
             foreach ($result as $item) {
                 if (!is_array($item)) continue;
@@ -276,11 +292,6 @@ class DreameVacuum extends IPSModule
                 $val  = $item['value'];
                 $key = $siid . '-' . $piid;
 
-                if ($siid === 4 && in_array($piid, $modeCandidates, true)) {
-                    $foundModes[$piid] = $val;
-                    continue;
-                }
-
                 switch ($key) {
                     case '2-1': $this->SetVarInt('DeviceStatus', (int)$val); break;
                     case '2-2':
@@ -288,11 +299,17 @@ class DreameVacuum extends IPSModule
                         $this->SetVarInt('DeviceFault', $fault);
                         $this->SetVarString('DeviceFaultText', ($fault === 0) ? 'OK' : ('Fehlercode ' . $fault));
                         break;
+
                     case '3-1': $this->SetVarInt('Battery', (int)$val); break;
                     case '3-2': $this->SetVarInt('ChargingState', (int)$val); break;
 
                     case '4-2': $this->SetVarInt('CleaningTime', (int)$val); break;
                     case '4-3': $this->SetVarFloat('CleaningArea', (float)$val); break;
+
+                    case '4-23':
+                        $this->SetVarInt('CleaningMode', (int)$val);
+                        $this->SetVarString('CleaningModeSource', '4-23');
+                        break;
 
                     case '9-1':  $this->SetVarInt('MainBrushLeftTime', (int)$val); break;
                     case '9-2':  $this->SetVarInt('MainBrushLife', (int)$val); break;
@@ -312,14 +329,6 @@ class DreameVacuum extends IPSModule
                             $this->EnsureShortcutVariables($normalized);
                         }
                         break;
-                }
-            }
-
-            foreach ($modeCandidates as $piid) {
-                if (array_key_exists($piid, $foundModes)) {
-                    $this->SetVarInt('CleaningMode', (int)$foundModes[$piid]);
-                    $this->SetVarString('CleaningModeSource', '4-' . strval($piid));
-                    break;
                 }
             }
 
@@ -358,6 +367,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_START)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -367,6 +377,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_PAUSE)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -376,6 +387,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_STOP)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -385,6 +397,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_DOCK)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -394,6 +407,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_SPOT)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -403,6 +417,7 @@ class DreameVacuum extends IPSModule
             array('piid' => 1, 'value' => self::CMD_LOCATE)
         ));
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -414,6 +429,7 @@ class DreameVacuum extends IPSModule
         );
         $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -437,6 +453,7 @@ class DreameVacuum extends IPSModule
         );
         $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
@@ -446,6 +463,7 @@ class DreameVacuum extends IPSModule
         if (!is_array($in)) throw new Exception('inJson muss JSON Array sein');
         $res = $this->SendAction((int)$siid, (int)$aiid, $in);
         $this->SetLastResponse(json_encode($res));
+        $this->SchedulePostCommandRefresh();
         return json_encode($res);
     }
 
