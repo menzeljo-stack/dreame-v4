@@ -293,7 +293,7 @@ class DreameVacuum extends IPSModule
                 $key = $siid . '-' . $piid;
 
                 switch ($key) {
-                    case '2-1': $this->SetVarInt('DeviceStatus', (int)$val); break;
+                    case '2-1': $this->SetVarInt('DeviceStatus', (int)$val); $this->SetVarInt('OperatingState', (int)$val); break;
                     case '2-2':
                         $fault = (int)$val;
                         $this->SetVarInt('DeviceFault', $fault);
@@ -686,7 +686,8 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('CleaningTime', 'Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 30, true);
         $this->MaintainVariable('CleaningArea', 'Reinigungsfläche', VARIABLETYPE_FLOAT, 'DRMV.Area', 31, true);
 
-        $this->MaintainVariable('CleaningMode', 'Betriebsmodus', VARIABLETYPE_INTEGER, '', 32, true);
+        $this->MaintainVariable('OperatingState', 'Betriebsmodus', VARIABLETYPE_INTEGER, 'DRMV.DeviceStatus', 21, true);
+        $this->MaintainVariable('CleaningMode', 'Betriebsmodus (4-23 Roh)', VARIABLETYPE_INTEGER, '', 32, true);
         $this->MaintainVariable('CleaningModeSource', 'Betriebsmodus Quelle', VARIABLETYPE_STRING, '~TextBox', 33, true);
 
         $this->MaintainVariable('MainBrushLife', 'Hauptbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
