@@ -133,6 +133,29 @@ class DreameVacuum extends IPSModule
             return;
         }
 
+
+        // Command buttons (boolean) for visualization
+        if ($Ident === 'CmdStart' || $Ident === 'CmdPause' || $Ident === 'CmdStop' || $Ident === 'CmdDock' || $Ident === 'CmdSpot' || $Ident === 'CmdLocate') {
+            $on = (bool)$Value;
+            if ($on) {
+                try {
+                    switch ($Ident) {
+                        case 'CmdStart':  $this->StartCleaning(); break;
+                        case 'CmdPause':  $this->PauseCleaning(); break;
+                        case 'CmdStop':   $this->StopCleaning(); break;
+                        case 'CmdDock':   $this->Dock(); break;
+                        case 'CmdSpot':   $this->SpotClean(); break;
+                        case 'CmdLocate': $this->Locate(); break;
+                    }
+                } catch (Exception $e) {
+                    $this->SetLastError($e->getMessage());
+                }
+                $vid = @$this->GetIDForIdent($Ident);
+                if ($vid) SetValueBoolean($vid, false);
+            }
+            return;
+        }
+
         if ($Ident === 'StartSelectedShortcut') {
             $on = (bool)$Value;
             if ($on) {
@@ -639,7 +662,8 @@ class DreameVacuum extends IPSModule
             5 => 'Fährt zur Station',
             6 => 'Lädt',
             12 => 'Saugen & Wischen',
-            13 => 'Laden abgeschlossen'
+            13 => 'Laden abgeschlossen',
+            14 => 'Mopp-Reinigung'
         ));
 
         $this->EnsureIntProfile('DRMV.ChargingState', array(
@@ -704,7 +728,38 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('Command', 'Command', VARIABLETYPE_INTEGER, 'DRMV.Command', 80, true);
         $this->EnableAction('Command');
 
-        $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
+        
+        // Separate command buttons for WebFront / Visualisierung
+        $this->MaintainVariable('CmdStart', 'Start', VARIABLETYPE_BOOLEAN, '~Switch', 81, true);
+        $this->EnableAction('CmdStart');
+        $this->MaintainVariable('CmdPause', 'Pause', VARIABLETYPE_BOOLEAN, '~Switch', 82, true);
+        $this->EnableAction('CmdPause');
+        $this->MaintainVariable('CmdStop', 'Stop', VARIABLETYPE_BOOLEAN, '~Switch', 83, true);
+        $this->EnableAction('CmdStop');
+        $this->MaintainVariable('CmdDock', 'Zur Station', VARIABLETYPE_BOOLEAN, '~Switch', 84, true);
+        $this->EnableAction('CmdDock');
+        $this->MaintainVariable('CmdSpot', 'Spot Clean', VARIABLETYPE_BOOLEAN, '~Switch', 85, true);
+        $this->EnableAction('CmdSpot');
+        $this->MaintainVariable('CmdLocate', 'Suchen / Beep', VARIABLETYPE_BOOLEAN, '~Switch', 86, true);
+        $this->EnableAction('CmdLocate');
+
+        // Create links in a dedicated category for nicer visualization
+        $cmdCat = $this->EnsureCategory('Commands', 'Commands', 150);
+        $ids = array(
+            'CmdStart' => 'Start',
+            'CmdPause' => 'Pause',
+            'CmdStop' => 'Stop',
+            'CmdDock' => 'Zur Station',
+            'CmdSpot' => 'Spot Clean',
+            'CmdLocate' => 'Suchen / Beep'
+        );
+        $pos = 1;
+        foreach ($ids as $ident => $name) {
+            $vid = @$this->GetIDForIdent($ident);
+            if ($vid) $this->EnsureLink('L_' . $ident, $name, $vid, $cmdCat, $pos);
+            $pos++;
+        }
+$this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
     }
 
     private function EnsureIntProfile($name, $associations)
