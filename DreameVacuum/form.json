@@ -40,12 +40,17 @@
         },
         {
             "type": "Label",
-            "label": "Login: RefreshToken ODER Username/Password"
+            "label": "Login: auth_key (aus HA) ODER RefreshToken ODER Username/Password"
+        },
+        {
+            "type": "ValidationTextBox",
+            "name": "AuthKey",
+            "caption": "auth_key (JWT aus HA) – empfohlen"
         },
         {
             "type": "ValidationTextBox",
             "name": "RefreshToken",
-            "caption": "Refresh Token (optional)"
+            "caption": "Refresh Token (optional; falls wirklich vorhanden)"
         },
         {
             "type": "ValidationTextBox",
