@@ -9,6 +9,7 @@ class DreameVacuum extends IPSModule
     const PASSWORD_SALT       = 'RAylYC%fmSKp7%Tq';
     const AUTH_PATH           = '/dreame-auth/oauth/token';
 
+    // dreame_appv1:dreame_appv1
     const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ==';
     const TENANT_DEFAULT      = '000000';
 
@@ -30,6 +31,7 @@ class DreameVacuum extends IPSModule
     const UA_MOVA    = 'Mova_Smarthome/1.2.4 (iPhone; iOS 18.4.1; Scale/3.00)';
     const UA_TROUVER = 'Trouver_Smarthome/1.0.9 (iPhone; iOS 18.4.1; Scale/3.00)';
 
+    // Start-Clean MIoT action (common)
     const ACTION_SIID_START_CLEAN = 4;
     const ACTION_AIID_START_CLEAN = 1;
 
@@ -41,7 +43,10 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyString('AccountType', 'dreame');
         $this->RegisterPropertyString('DID', '');
         $this->RegisterPropertyString('Host', '');
-        $this->RegisterPropertyString('RefreshToken', '');
+
+        // IMPORTANT: HA auth_key is a JWT ACCESS token (NOT a refresh token)
+        $this->RegisterPropertyString('AuthKey', '');          // JWT from HA
+        $this->RegisterPropertyString('RefreshToken', '');     // optional; only if you really have one
         $this->RegisterPropertyString('Username', '');
         $this->RegisterPropertyString('Password', '');
 
@@ -238,7 +243,7 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    // ---------------- Commands (Public) ----------------
+    // ---------------- Commands ----------------
 
     public function StartShortcut($shortcutId)
     {
@@ -274,26 +279,6 @@ class DreameVacuum extends IPSModule
         return json_encode($res);
     }
 
-    public function SetProperties($propsJson)
-    {
-        $arr = json_decode($propsJson, true);
-        if (!is_array($arr)) throw new Exception('propsJson muss JSON Array sein');
-
-        $payload = array();
-        foreach ($arr as $p) {
-            if (!is_array($p) || !isset($p['siid']) || !isset($p['piid'])) continue;
-            $payload[] = array(
-                'did' => $this->GetDID(),
-                'siid' => (int)$p['siid'],
-                'piid' => (int)$p['piid'],
-                'value' => $p['value']
-            );
-        }
-        $res = $this->SendCommand('set_properties', $payload);
-        $this->SetLastResponse(json_encode($res));
-        return json_encode($res);
-    }
-
     public function SendActionRaw($siid, $aiid, $inJson)
     {
         $in = json_decode($inJson, true);
@@ -307,7 +292,6 @@ class DreameVacuum extends IPSModule
 
     private function GetShortcuts()
     {
-        $this->EnsureLoggedIn(false);
         $payload = array(array('did' => $this->GetDID(), 'siid' => 4, 'piid' => 48));
         $result = $this->SendCommand('get_properties', $payload);
 
@@ -345,7 +329,6 @@ class DreameVacuum extends IPSModule
 
         foreach ($decoded as $entry) {
             if (!is_array($entry)) continue;
-
             $id = null;
             $name = null;
 
@@ -356,7 +339,6 @@ class DreameVacuum extends IPSModule
 
             if ($id !== null || $name !== null) $lines[] = strval($id) . ': ' . strval($name);
         }
-
         return implode("\n", $lines);
     }
 
@@ -467,6 +449,41 @@ class DreameVacuum extends IPSModule
         return 'https://' . $region . $this->GetDomainSuffix() . ':' . self::API_PORT;
     }
 
+    // auth_key handling: treat as access token (JWT)
+    private function MaybeUseAuthKeyAsAccessToken()
+    {
+        $authKey = trim($this->ReadPropertyString('AuthKey'));
+        if ($authKey === '') return false;
+
+        $this->SetBuffer('AccessToken', $authKey);
+
+        $exp = $this->ParseJwtExp($authKey);
+        if ($exp > 0) {
+            $this->SetBuffer('AccessTokenExpire', strval($exp - 120));
+        } else {
+            $this->SetBuffer('AccessTokenExpire', strval(time() + 43200)); // 12h
+        }
+        return true;
+    }
+
+    private function ParseJwtExp($jwt)
+    {
+        $parts = explode('.', $jwt);
+        if (count($parts) < 2) return 0;
+
+        $payload = strtr($parts[1], '-_', '+/');
+        $pad = strlen($payload) % 4;
+        if ($pad > 0) $payload .= str_repeat('=', 4 - $pad);
+
+        $decoded = base64_decode($payload, true);
+        if ($decoded === false) return 0;
+
+        $json = json_decode($decoded, true);
+        if (!is_array($json) || !isset($json['exp'])) return 0;
+
+        return (int)$json['exp'];
+    }
+
     private function EnsureLoggedIn($force)
     {
         if (!$force) {
@@ -475,16 +492,26 @@ class DreameVacuum extends IPSModule
             if ($token !== '' && $exp > time()) return;
         }
 
+        // 1) Prefer auth_key (HA) as ACCESS token
+        if ($this->MaybeUseAuthKeyAsAccessToken()) {
+            $token = $this->GetBuffer('AccessToken');
+            $exp   = (int)$this->GetBuffer('AccessTokenExpire');
+            if ($token !== '' && $exp > time()) return;
+        }
+
+        // 2) Real refresh token (optional)
         $refresh = trim($this->ReadPropertyString('RefreshToken'));
         if ($refresh === '') $refresh = $this->GetBuffer('RefreshToken');
-
         if ($refresh !== '') {
             if ($this->LoginRefresh($refresh)) return;
         }
 
+        // 3) Username/Password fallback
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
-        if ($user === '' || $pass === '') throw new Exception('RefreshToken ungültig/leer und Username/Password fehlt');
+        if ($user === '' || $pass === '') {
+            throw new Exception('Kein gültiger auth_key/AccessToken und kein RefreshToken und kein Username/Password hinterlegt');
+        }
         if (!$this->LoginPassword($user, $pass)) throw new Exception('Login fehlgeschlagen');
     }
 
@@ -597,9 +624,9 @@ class DreameVacuum extends IPSModule
             'id'  => $id,
             'data' => array(
                 'did' => $did,
-                'id'  => $id,
+                'id' => $id,
                 'method' => $method,
-                'params'  => $params
+                'params' => $params
             )
         );
 
@@ -618,12 +645,10 @@ class DreameVacuum extends IPSModule
             'did' => $this->GetDID(),
             'siid' => (int)$siid,
             'aiid' => (int)$aiid,
-            'in'   => $in
+            'in' => $in
         );
         return $this->SendCommand('action', $payload);
     }
-
-    // ---- HTTP helper ----
 
     private function HttpPostForm($url, $dataString)
     {
