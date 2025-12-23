@@ -98,7 +98,6 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    // Visualisierung/Bedienung: Variablenaktionen abfangen
     public function RequestAction($Ident, $Value)
     {
         if ($Ident === 'Command') {
@@ -229,6 +228,9 @@ class DreameVacuum extends IPSModule
             $this->EnsureLoggedIn(false);
             if ($this->ReadPropertyBoolean('AutoCreateVariables')) $this->EnsureVariables();
 
+            // Betriebsmodus (CleaningMode) differs by model -> request several candidates
+            $modeCandidates = array(23, 4, 7, 14, 20, 21, 22);
+
             $props = array(
                 array('siid' => 2,  'piid' => 1),
                 array('siid' => 2,  'piid' => 2),
@@ -237,8 +239,7 @@ class DreameVacuum extends IPSModule
 
                 array('siid' => 4,  'piid' => 2),
                 array('siid' => 4,  'piid' => 3),
-                array('siid' => 4,  'piid' => 23),
-                array('siid' => 4,  'piid' => 48),
+                array('siid' => 4,  'piid' => 48), // shortcuts list
 
                 array('siid' => 9,  'piid' => 1),
                 array('siid' => 9,  'piid' => 2),
@@ -247,6 +248,10 @@ class DreameVacuum extends IPSModule
                 array('siid' => 11, 'piid' => 1),
                 array('siid' => 11, 'piid' => 2),
             );
+
+            foreach ($modeCandidates as $piid) {
+                $props[] = array('siid' => 4, 'piid' => (int)$piid);
+            }
 
             $payload = array();
             foreach ($props as $p) {
@@ -258,6 +263,8 @@ class DreameVacuum extends IPSModule
 
             if (!is_array($result)) throw new Exception('Unerwartete Antwort bei get_properties');
 
+            $foundModes = array(); // piid => value
+
             foreach ($result as $item) {
                 if (!is_array($item)) continue;
                 if (!isset($item['siid']) || !isset($item['piid'])) continue;
@@ -268,6 +275,11 @@ class DreameVacuum extends IPSModule
                 $piid = (int)$item['piid'];
                 $val  = $item['value'];
                 $key = $siid . '-' . $piid;
+
+                if ($siid === 4 && in_array($piid, $modeCandidates, true)) {
+                    $foundModes[$piid] = $val;
+                    continue;
+                }
 
                 switch ($key) {
                     case '2-1': $this->SetVarInt('DeviceStatus', (int)$val); break;
@@ -281,7 +293,6 @@ class DreameVacuum extends IPSModule
 
                     case '4-2': $this->SetVarInt('CleaningTime', (int)$val); break;
                     case '4-3': $this->SetVarFloat('CleaningArea', (float)$val); break;
-                    case '4-23': $this->SetVarInt('CleaningMode', (int)$val); break;
 
                     case '9-1':  $this->SetVarInt('MainBrushLeftTime', (int)$val); break;
                     case '9-2':  $this->SetVarInt('MainBrushLife', (int)$val); break;
@@ -301,6 +312,14 @@ class DreameVacuum extends IPSModule
                             $this->EnsureShortcutVariables($normalized);
                         }
                         break;
+                }
+            }
+
+            foreach ($modeCandidates as $piid) {
+                if (array_key_exists($piid, $foundModes)) {
+                    $this->SetVarInt('CleaningMode', (int)$foundModes[$piid]);
+                    $this->SetVarString('CleaningModeSource', '4-' . strval($piid));
+                    break;
                 }
             }
 
@@ -530,24 +549,16 @@ class DreameVacuum extends IPSModule
         }
     }
 
-    /**
-     * IMPORTANT FIX:
-     * IP-Symcon expects IPS_SetVariableCustomAction() to point to a SCRIPT.
-     * Therefore we keep the real shortcut-variables directly under the instance (MaintainVariable + EnableAction),
-     * and only create LINKS in the "Shortcuts" category for nicer visualization.
-     */
     private function EnsureShortcutVariables($shortcuts)
     {
         if (!is_array($shortcuts)) return;
 
-        // A) Selection + start button (instance vars)
         $this->MaintainVariable('ShortcutSelected', 'Shortcut auswählen', VARIABLETYPE_INTEGER, 'DRMV.Shortcuts', 100, true);
         $this->EnableAction('ShortcutSelected');
 
         $this->MaintainVariable('StartSelectedShortcut', 'Shortcut starten', VARIABLETYPE_BOOLEAN, '~Switch', 101, true);
         $this->EnableAction('StartSelectedShortcut');
 
-        // B) Per-shortcut "buttons" (instance vars) + links in category
         $catId = $this->EnsureCategory('Shortcuts', 'Shortcuts', 200);
 
         $pos = 1;
@@ -557,11 +568,9 @@ class DreameVacuum extends IPSModule
             $name = isset($sc['name']) ? (string)$sc['name'] : ('Shortcut ' . $id);
             $ident = 'SC_' . $id;
 
-            // real variable under instance
             $this->MaintainVariable($ident, $name, VARIABLETYPE_BOOLEAN, '~Switch', 210 + $pos, true);
             $this->EnableAction($ident);
 
-            // link under category for visualization
             $varId = @$this->GetIDForIdent($ident);
             if ($varId) $this->EnsureLink('L_' . $ident, $name, $varId, $catId, $pos);
 
@@ -643,14 +652,12 @@ class DreameVacuum extends IPSModule
 
     private function EnsureVariables()
     {
-        // Info
         $this->MaintainVariable('Model', 'Model', VARIABLETYPE_STRING, '~TextBox', 10, true);
         $this->MaintainVariable('Firmware', 'Firmware', VARIABLETYPE_STRING, '~TextBox', 11, true);
         $this->MaintainVariable('Name', 'Name', VARIABLETYPE_STRING, '~TextBox', 12, true);
         $this->MaintainVariable('Mac', 'Mac', VARIABLETYPE_STRING, '~TextBox', 13, true);
         $this->MaintainVariable('Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 14, true);
 
-        // Status
         $this->MaintainVariable('DeviceStatus', 'Status', VARIABLETYPE_INTEGER, 'DRMV.DeviceStatus', 20, true);
         $this->MaintainVariable('ChargingState', 'Ladestatus', VARIABLETYPE_INTEGER, 'DRMV.ChargingState', 22, true);
         $this->MaintainVariable('Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 23, true);
@@ -660,9 +667,10 @@ class DreameVacuum extends IPSModule
 
         $this->MaintainVariable('CleaningTime', 'Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 30, true);
         $this->MaintainVariable('CleaningArea', 'Reinigungsfläche', VARIABLETYPE_FLOAT, 'DRMV.Area', 31, true);
-        $this->MaintainVariable('CleaningMode', 'Cleaning Mode', VARIABLETYPE_INTEGER, '', 32, true);
 
-        // Consumables
+        $this->MaintainVariable('CleaningMode', 'Betriebsmodus', VARIABLETYPE_INTEGER, '', 32, true);
+        $this->MaintainVariable('CleaningModeSource', 'Betriebsmodus Quelle', VARIABLETYPE_STRING, '~TextBox', 33, true);
+
         $this->MaintainVariable('MainBrushLife', 'Hauptbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
         $this->MaintainVariable('MainBrushLeftTime', 'Hauptbürste Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 41, true);
         $this->MaintainVariable('SideBrushLife', 'Seitenbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 42, true);
@@ -670,16 +678,13 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('FilterLife', 'Filter Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 44, true);
         $this->MaintainVariable('FilterLeftTime', 'Filter Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 45, true);
 
-        // Shortcuts RAW/JSON/TEXT
         $this->MaintainVariable('ShortcutsRaw', 'Shortcuts Raw (4-48)', VARIABLETYPE_STRING, '~TextBox', 70, true);
         $this->MaintainVariable('ShortcutsJson', 'Shortcuts (JSON)', VARIABLETYPE_STRING, '~TextBox', 71, true);
         $this->MaintainVariable('ShortcutsText', 'Shortcuts (Text)', VARIABLETYPE_STRING, '~TextBox', 72, true);
 
-        // Command selector for visualization
         $this->MaintainVariable('Command', 'Command', VARIABLETYPE_INTEGER, 'DRMV.Command', 80, true);
         $this->EnableAction('Command');
 
-        // Update timestamp
         $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
     }
 
