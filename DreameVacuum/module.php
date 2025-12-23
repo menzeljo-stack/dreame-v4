@@ -1,5 +1,4 @@
 <?php
-
 class DreameVacuum extends IPSModule
 {
     const API_DOMAIN_DREAME   = '.iot.dreame.tech';
@@ -10,7 +9,6 @@ class DreameVacuum extends IPSModule
     const PASSWORD_SALT       = 'RAylYC%fmSKp7%Tq';
     const AUTH_PATH           = '/dreame-auth/oauth/token';
 
-    // Client: dreame_appv1:dreame_appv1
     const AUTHORIZATION_VALUE = 'Basic ZHJlYW1lX2FwcHYxOmRyZWFtZV9hcHB2MQ==';
     const TENANT_DEFAULT      = '000000';
 
@@ -32,6 +30,9 @@ class DreameVacuum extends IPSModule
     const UA_MOVA    = 'Mova_Smarthome/1.2.4 (iPhone; iOS 18.4.1; Scale/3.00)';
     const UA_TROUVER = 'Trouver_Smarthome/1.0.9 (iPhone; iOS 18.4.1; Scale/3.00)';
 
+    const ACTION_SIID_START_CLEAN = 4;
+    const ACTION_AIID_START_CLEAN = 1;
+
     public function Create()
     {
         parent::Create();
@@ -40,11 +41,6 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyString('AccountType', 'dreame');
         $this->RegisterPropertyString('DID', '');
         $this->RegisterPropertyString('Host', '');
-
-        // NEU: direktes AuthKey (HA auth_key / JWT)
-        $this->RegisterPropertyString('AuthKey', '');
-
-        // optional klassische Tokens
         $this->RegisterPropertyString('RefreshToken', '');
         $this->RegisterPropertyString('Username', '');
         $this->RegisterPropertyString('Password', '');
@@ -80,11 +76,11 @@ class DreameVacuum extends IPSModule
 
         if (IPS_GetKernelRunlevel() == KR_READY) {
             $this->EnsureProfiles();
-            if ($this->ReadPropertyBoolean('AutoCreateVariables')) {
-                $this->EnsureVariables();
-            }
+            if ($this->ReadPropertyBoolean('AutoCreateVariables')) $this->EnsureVariables();
         }
     }
+
+    // ---------------- UI Actions ----------------
 
     public function TestLogin()
     {
@@ -143,10 +139,7 @@ class DreameVacuum extends IPSModule
         $this->SetLastError('');
         try {
             $this->EnsureLoggedIn(false);
-
-            if ($this->ReadPropertyBoolean('AutoCreateVariables')) {
-                $this->EnsureVariables();
-            }
+            if ($this->ReadPropertyBoolean('AutoCreateVariables')) $this->EnsureVariables();
 
             $props = array(
                 array('siid' => 2,  'piid' => 1),
@@ -154,12 +147,10 @@ class DreameVacuum extends IPSModule
                 array('siid' => 3,  'piid' => 1),
                 array('siid' => 3,  'piid' => 2),
 
-                array('siid' => 4,  'piid' => 1),
                 array('siid' => 4,  'piid' => 2),
                 array('siid' => 4,  'piid' => 3),
-                array('siid' => 4,  'piid' => 4),
-                array('siid' => 4,  'piid' => 5),
-                array('siid' => 4,  'piid' => 6),
+                array('siid' => 4,  'piid' => 23),
+                array('siid' => 4,  'piid' => 48),
 
                 array('siid' => 9,  'piid' => 1),
                 array('siid' => 9,  'piid' => 2),
@@ -167,10 +158,6 @@ class DreameVacuum extends IPSModule
                 array('siid' => 10, 'piid' => 2),
                 array('siid' => 11, 'piid' => 1),
                 array('siid' => 11, 'piid' => 2),
-
-                array('siid' => 12, 'piid' => 2),
-                array('siid' => 12, 'piid' => 3),
-                array('siid' => 12, 'piid' => 4)
             );
 
             $payload = array();
@@ -189,8 +176,10 @@ class DreameVacuum extends IPSModule
                 if (isset($item['code']) && (int)$item['code'] !== 0) continue;
                 if (!array_key_exists('value', $item)) continue;
 
-                $key = ((int)$item['siid']) . '-' . ((int)$item['piid']);
-                $val = $item['value'];
+                $siid = (int)$item['siid'];
+                $piid = (int)$item['piid'];
+                $val  = $item['value'];
+                $key = $siid . '-' . $piid;
 
                 switch ($key) {
                     case '2-1': $this->SetVarInt('DeviceStatus', (int)$val); break;
@@ -199,16 +188,12 @@ class DreameVacuum extends IPSModule
                         $this->SetVarInt('DeviceFault', $fault);
                         $this->SetVarString('DeviceFaultText', ($fault === 0) ? 'OK' : ('Fehlercode ' . $fault));
                         break;
-
                     case '3-1': $this->SetVarInt('Battery', (int)$val); break;
                     case '3-2': $this->SetVarInt('ChargingState', (int)$val); break;
 
-                    case '4-1': $this->SetVarInt('OperatingMode', (int)$val); break;
                     case '4-2': $this->SetVarInt('CleaningTime', (int)$val); break;
                     case '4-3': $this->SetVarFloat('CleaningArea', (float)$val); break;
-                    case '4-4': $this->SetVarInt('CleaningMode', (int)$val); break;
-                    case '4-5': $this->SetVarInt('WaterFlow', (int)$val); break;
-                    case '4-6': $this->SetVarBoolean('MopAttached', ((int)$val) === 1); break;
+                    case '4-23': $this->SetVarInt('CleaningMode', (int)$val); break;
 
                     case '9-1':  $this->SetVarInt('MainBrushLeftTime', (int)$val); break;
                     case '9-2':  $this->SetVarInt('MainBrushLife', (int)$val); break;
@@ -217,9 +202,14 @@ class DreameVacuum extends IPSModule
                     case '11-1': $this->SetVarInt('FilterLife', (int)$val); break;
                     case '11-2': $this->SetVarInt('FilterLeftTime', (int)$val); break;
 
-                    case '12-2': $this->SetVarInt('TotalCleanTime', (int)$val); break;
-                    case '12-3': $this->SetVarInt('TotalCleanCount', (int)$val); break;
-                    case '12-4': $this->SetVarInt('TotalCleanArea', (int)$val); break;
+                    case '4-48':
+                        $this->SetVarString('ShortcutsRaw', (string)$val);
+                        $decoded = $this->DecodeShortcutList((string)$val);
+                        if ($decoded !== null) {
+                            $this->SetVarString('ShortcutsJson', json_encode($decoded, JSON_UNESCAPED_UNICODE));
+                            $this->SetVarString('ShortcutsText', $this->ShortcutsToText($decoded));
+                        }
+                        break;
                 }
             }
 
@@ -232,6 +222,146 @@ class DreameVacuum extends IPSModule
         }
     }
 
+    public function UpdateShortcuts()
+    {
+        $this->SetLastError('');
+        try {
+            $decoded = $this->GetShortcuts();
+            if ($this->ReadPropertyBoolean('AutoCreateVariables')) {
+                $this->EnsureVariables();
+                $this->SetVarString('ShortcutsJson', json_encode($decoded, JSON_UNESCAPED_UNICODE));
+                $this->SetVarString('ShortcutsText', $this->ShortcutsToText($decoded));
+            }
+            $this->SetLastError('Shortcuts ok');
+        } catch (Exception $e) {
+            $this->SetLastError($e->getMessage());
+        }
+    }
+
+    // ---------------- Commands (Public) ----------------
+
+    public function StartShortcut($shortcutId)
+    {
+        $in = array(
+            array('piid' => 1, 'value' => 25),
+            array('piid' => 10, 'value' => strval($shortcutId))
+        );
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function StartRooms($roomsJson, $repeats, $suction, $water)
+    {
+        $rooms = json_decode($roomsJson, true);
+        if (!is_array($rooms) || count($rooms) === 0) throw new Exception('roomsJson muss ein JSON Array sein, z.B. [4,6]');
+
+        $selects = array();
+        $idx = 1;
+        foreach ($rooms as $rid) {
+            $selects[] = array((int)$rid, (int)$repeats, (int)$suction, (int)$water, $idx);
+            $idx++;
+        }
+
+        $payload = array('selects' => $selects);
+
+        $in = array(
+            array('piid' => 1, 'value' => 18),
+            array('piid' => 10, 'value' => json_encode($payload))
+        );
+        $res = $this->SendAction(self::ACTION_SIID_START_CLEAN, self::ACTION_AIID_START_CLEAN, $in);
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function SetProperties($propsJson)
+    {
+        $arr = json_decode($propsJson, true);
+        if (!is_array($arr)) throw new Exception('propsJson muss JSON Array sein');
+
+        $payload = array();
+        foreach ($arr as $p) {
+            if (!is_array($p) || !isset($p['siid']) || !isset($p['piid'])) continue;
+            $payload[] = array(
+                'did' => $this->GetDID(),
+                'siid' => (int)$p['siid'],
+                'piid' => (int)$p['piid'],
+                'value' => $p['value']
+            );
+        }
+        $res = $this->SendCommand('set_properties', $payload);
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    public function SendActionRaw($siid, $aiid, $inJson)
+    {
+        $in = json_decode($inJson, true);
+        if (!is_array($in)) throw new Exception('inJson muss JSON Array sein');
+        $res = $this->SendAction((int)$siid, (int)$aiid, $in);
+        $this->SetLastResponse(json_encode($res));
+        return json_encode($res);
+    }
+
+    // ---------------- Shortcuts helpers ----------------
+
+    private function GetShortcuts()
+    {
+        $this->EnsureLoggedIn(false);
+        $payload = array(array('did' => $this->GetDID(), 'siid' => 4, 'piid' => 48));
+        $result = $this->SendCommand('get_properties', $payload);
+
+        if (!is_array($result) || count($result) === 0) return array();
+        $item = $result[0];
+        if (!is_array($item) || !array_key_exists('value', $item)) return array();
+
+        $raw = (string)$item['value'];
+        $this->SetVarString('ShortcutsRaw', $raw);
+
+        $decoded = $this->DecodeShortcutList($raw);
+        if ($decoded === null) return array();
+        return $decoded;
+    }
+
+    private function DecodeShortcutList($raw)
+    {
+        $raw = trim($raw);
+        if ($raw === '') return null;
+
+        $b = base64_decode($raw, true);
+        if ($b === false) {
+            $j = json_decode($raw, true);
+            return is_array($j) ? $j : null;
+        }
+
+        $j = json_decode($b, true);
+        return is_array($j) ? $j : null;
+    }
+
+    private function ShortcutsToText($decoded)
+    {
+        if (!is_array($decoded)) return '';
+        $lines = array();
+
+        foreach ($decoded as $entry) {
+            if (!is_array($entry)) continue;
+
+            $id = null;
+            $name = null;
+
+            if (isset($entry['id'])) $id = $entry['id'];
+            if (isset($entry['shortcutId'])) $id = $entry['shortcutId'];
+            if (isset($entry['name'])) $name = $entry['name'];
+            if (isset($entry['title'])) $name = $entry['title'];
+
+            if ($id !== null || $name !== null) $lines[] = strval($id) . ': ' . strval($name);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    // ---------------- Profiles / Variables ----------------
+
     private function EnsureProfiles()
     {
         $this->EnsureIntProfile('DRMV.DeviceStatus', array(
@@ -241,7 +371,6 @@ class DreameVacuum extends IPSModule
             4 => 'Fehler',
             5 => 'Fährt zur Station',
             6 => 'Lädt',
-            7 => 'Wischt',
             12 => 'Saugen & Wischen',
             13 => 'Laden abgeschlossen'
         ));
@@ -250,26 +379,6 @@ class DreameVacuum extends IPSModule
             1 => 'Laden',
             2 => 'Entladen',
             5 => 'Fährt zur Station'
-        ));
-
-        $this->EnsureIntProfile('DRMV.OperatingMode', array(
-            1 => 'Pausiert',
-            2 => 'Reinigt',
-            3 => 'Fährt zur Station',
-            6 => 'Lädt'
-        ));
-
-        $this->EnsureIntProfile('DRMV.CleaningMode', array(
-            0 => 'Leise',
-            1 => 'Standard',
-            2 => 'Stark',
-            3 => 'Turbo'
-        ));
-
-        $this->EnsureIntProfile('DRMV.WaterFlow', array(
-            1 => 'Niedrig',
-            2 => 'Mittel',
-            3 => 'Hoch'
         ));
 
         $this->EnsureIntProfileSimple('DRMV.Minutes', ' min');
@@ -286,7 +395,6 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 14, true);
 
         $this->MaintainVariable('DeviceStatus', 'Status', VARIABLETYPE_INTEGER, 'DRMV.DeviceStatus', 20, true);
-        $this->MaintainVariable('OperatingMode', 'Betriebsmodus', VARIABLETYPE_INTEGER, 'DRMV.OperatingMode', 21, true);
         $this->MaintainVariable('ChargingState', 'Ladestatus', VARIABLETYPE_INTEGER, 'DRMV.ChargingState', 22, true);
         $this->MaintainVariable('Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 23, true);
 
@@ -295,9 +403,7 @@ class DreameVacuum extends IPSModule
 
         $this->MaintainVariable('CleaningTime', 'Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 30, true);
         $this->MaintainVariable('CleaningArea', 'Reinigungsfläche', VARIABLETYPE_FLOAT, 'DRMV.Area', 31, true);
-        $this->MaintainVariable('CleaningMode', 'Saugstufe', VARIABLETYPE_INTEGER, 'DRMV.CleaningMode', 32, true);
-        $this->MaintainVariable('WaterFlow', 'Wasserfluss', VARIABLETYPE_INTEGER, 'DRMV.WaterFlow', 33, true);
-        $this->MaintainVariable('MopAttached', 'Wischmodul montiert', VARIABLETYPE_BOOLEAN, '~Switch', 34, true);
+        $this->MaintainVariable('CleaningMode', 'Cleaning Mode', VARIABLETYPE_INTEGER, '', 32, true);
 
         $this->MaintainVariable('MainBrushLife', 'Hauptbürste Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 40, true);
         $this->MaintainVariable('MainBrushLeftTime', 'Hauptbürste Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 41, true);
@@ -306,18 +412,16 @@ class DreameVacuum extends IPSModule
         $this->MaintainVariable('FilterLife', 'Filter Rest (%)', VARIABLETYPE_INTEGER, '~Intensity.100', 44, true);
         $this->MaintainVariable('FilterLeftTime', 'Filter Rest (h)', VARIABLETYPE_INTEGER, 'DRMV.Hours', 45, true);
 
-        $this->MaintainVariable('TotalCleanTime', 'Gesamt Reinigungszeit', VARIABLETYPE_INTEGER, 'DRMV.Minutes', 50, true);
-        $this->MaintainVariable('TotalCleanCount', 'Gesamt Reinigungen', VARIABLETYPE_INTEGER, '', 51, true);
-        $this->MaintainVariable('TotalCleanArea', 'Gesamt Reinigungsfläche', VARIABLETYPE_INTEGER, 'DRMV.Area', 52, true);
+        $this->MaintainVariable('ShortcutsRaw', 'Shortcuts Raw (4-48)', VARIABLETYPE_STRING, '~TextBox', 70, true);
+        $this->MaintainVariable('ShortcutsJson', 'Shortcuts (JSON)', VARIABLETYPE_STRING, '~TextBox', 71, true);
+        $this->MaintainVariable('ShortcutsText', 'Shortcuts (Text)', VARIABLETYPE_STRING, '~TextBox', 72, true);
 
-        $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 60, true);
+        $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~UnixTimestamp', 90, true);
     }
 
     private function EnsureIntProfile($name, $associations)
     {
-        if (!IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
-        }
+        if (!IPS_VariableProfileExists($name)) IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
         foreach ($associations as $value => $text) {
             IPS_SetVariableProfileAssociation($name, (int)$value, (string)$text, '', 0);
         }
@@ -330,6 +434,8 @@ class DreameVacuum extends IPSModule
             IPS_SetVariableProfileText($name, '', $suffix);
         }
     }
+
+    // ---------------- Cloud core ----------------
 
     private function GetDID()
     {
@@ -361,66 +467,25 @@ class DreameVacuum extends IPSModule
         return 'https://' . $region . $this->GetDomainSuffix() . ':' . self::API_PORT;
     }
 
-    private function IsJwt($token)
-    {
-        // sehr grob: 3 Base64url-Teile getrennt durch Punkte
-        return (substr_count($token, '.') === 2);
-    }
-
-    private function JwtPayload($token)
-    {
-        $parts = explode('.', $token);
-        if (count($parts) !== 3) return null;
-        $b64 = strtr($parts[1], '-_', '+/');
-        $pad = strlen($b64) % 4;
-        if ($pad > 0) $b64 .= str_repeat('=', 4 - $pad);
-        $json = base64_decode($b64);
-        if ($json === false) return null;
-        $obj = json_decode($json, true);
-        if (!is_array($obj)) return null;
-        return $obj;
-    }
-
     private function EnsureLoggedIn($force)
     {
-        // 1) AuthKey (JWT) direkt verwenden (HA auth_key)
-        $authKey = trim($this->ReadPropertyString('AuthKey'));
-        if ($authKey !== '' && $this->IsJwt($authKey) && $this->GetBuffer('DisableAuthKey') !== '1') {
-            $payload = $this->JwtPayload($authKey);
-            if (is_array($payload) && isset($payload['tenant_id'])) {
-                $this->SetBuffer('TenantId', strval($payload['tenant_id']));
-            }
-            if (is_array($payload) && isset($payload['exp'])) {
-                $this->SetBuffer('AccessTokenExpire', strval(((int)$payload['exp']) - 60));
-            } else {
-                $this->SetBuffer('AccessTokenExpire', strval(time() + 3600));
-            }
-            $this->SetBuffer('AccessToken', $authKey);
-            return;
-        }
-
-        // 2) vorhandenes AccessToken nutzen
         if (!$force) {
             $token = $this->GetBuffer('AccessToken');
             $exp   = (int)$this->GetBuffer('AccessTokenExpire');
             if ($token !== '' && $exp > time()) return;
         }
 
-        // 3) RefreshToken-Flow (nur wenn es KEIN JWT ist)
         $refresh = trim($this->ReadPropertyString('RefreshToken'));
-        if ($refresh !== '' && !$this->IsJwt($refresh)) {
-            if ($this->LoginRefresh($refresh)) {
-                $this->SetBuffer('DisableAuthKey', ''); // falls wir vorher umgeschaltet hatten
-                return;
-            }
+        if ($refresh === '') $refresh = $this->GetBuffer('RefreshToken');
+
+        if ($refresh !== '') {
+            if ($this->LoginRefresh($refresh)) return;
         }
 
-        // 4) Passwort-Login
         $user = trim($this->ReadPropertyString('Username'));
         $pass = $this->ReadPropertyString('Password');
-        if ($user === '' || $pass === '') throw new Exception('Kein gültiger Login: AuthKey oder Username/Password setzen');
+        if ($user === '' || $pass === '') throw new Exception('RefreshToken ungültig/leer und Username/Password fehlt');
         if (!$this->LoginPassword($user, $pass)) throw new Exception('Login fehlgeschlagen');
-        $this->SetBuffer('DisableAuthKey', '');
     }
 
     private function LoginRefresh($refreshToken)
@@ -443,11 +508,13 @@ class DreameVacuum extends IPSModule
     private function HandleLoginResponse($res)
     {
         if (!is_array($res)) return false;
+
         if (isset($res['access_token'])) {
             $this->SetBuffer('AccessToken', strval($res['access_token']));
             if (isset($res['refresh_token'])) $this->SetBuffer('RefreshToken', strval($res['refresh_token']));
             if (isset($res['expires_in'])) $this->SetBuffer('AccessTokenExpire', strval(time() + (int)$res['expires_in'] - 120));
             if (isset($res['tenant_id'])) $this->SetBuffer('TenantId', strval($res['tenant_id']));
+            if (isset($res['uid'])) $this->SetBuffer('Uuid', strval($res['uid']));
             return true;
         }
         return false;
@@ -458,6 +525,7 @@ class DreameVacuum extends IPSModule
         $this->EnsureLoggedIn(false);
 
         $url = $this->GetApiBase() . '/' . ltrim($path, '/');
+
         $tenant = $this->GetBuffer('TenantId');
         if ($tenant === '') $tenant = self::TENANT_DEFAULT;
 
@@ -478,9 +546,7 @@ class DreameVacuum extends IPSModule
 
         $res = $this->CurlPost($url, json_encode($payload), $headers, 15);
 
-        // Bei 401: einmal AuthKey deaktivieren (damit Passwort-Login greifen kann) und retry
         if ($retry && is_array($res) && isset($res['_http_status']) && (int)$res['_http_status'] === 401) {
-            $this->SetBuffer('DisableAuthKey', '1');
             $this->SetBuffer('AccessToken', '');
             $this->SetBuffer('AccessTokenExpire', '0');
             $this->EnsureLoggedIn(true);
@@ -494,6 +560,7 @@ class DreameVacuum extends IPSModule
     {
         $host = trim($this->ReadPropertyString('Host'));
         if ($host !== '') return $host;
+
         $host = $this->GetBuffer('HostFromCloud');
         if ($host !== '') return $host;
 
@@ -515,7 +582,8 @@ class DreameVacuum extends IPSModule
         if ($host === '') throw new Exception('Host/Cluster unbekannt. Setze "Host" oder nutze "Geräteinfos aktualisieren".');
 
         $parts = explode('.', $host);
-        $cluster = (count($parts) > 0) ? ('-' . $parts[0]) : '';
+        $cluster = '';
+        if (count($parts) > 0) $cluster = '-' . $parts[0];
 
         $id = (int)$this->GetBuffer('RequestId');
         if ($id <= 0) $id = mt_rand(1, 100);
@@ -523,6 +591,7 @@ class DreameVacuum extends IPSModule
         $this->SetBuffer('RequestId', strval($id));
 
         $did = $this->GetDID();
+
         $payload = array(
             'did' => $did,
             'id'  => $id,
@@ -542,6 +611,19 @@ class DreameVacuum extends IPSModule
         }
         return $res;
     }
+
+    private function SendAction($siid, $aiid, $in)
+    {
+        $payload = array(
+            'did' => $this->GetDID(),
+            'siid' => (int)$siid,
+            'aiid' => (int)$aiid,
+            'in'   => $in
+        );
+        return $this->SendCommand('action', $payload);
+    }
+
+    // ---- HTTP helper ----
 
     private function HttpPostForm($url, $dataString)
     {
@@ -574,10 +656,6 @@ class DreameVacuum extends IPSModule
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeoutSec);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
-        // gzip/deflate automatisch dekodieren
-        curl_setopt($ch, CURLOPT_ENCODING, '');
-
-        // Windows CA issues
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
         curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 
@@ -588,40 +666,45 @@ class DreameVacuum extends IPSModule
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($resp === false || $resp === null) {
-            return array('_http_status' => $code, '_error' => $err);
-        }
+        if ($resp === false || $resp === null) return array('_http_status' => $code, '_error' => $err);
 
         $decoded = json_decode($resp, true);
-        if ($decoded === null) {
-            return array('_http_status' => $code, '_raw' => $resp);
-        }
+        if ($decoded === null) return array('_http_status' => $code, '_raw' => $resp);
         $decoded['_http_status'] = $code;
         return $decoded;
     }
 
-    private function SetConnected($state) { $this->SetVarBoolean('Connected', (bool)$state); }
-    private function SetLastError($msg)   { $this->SetVarString('LastError', (string)$msg); }
-    private function SetLastResponse($msg){ $this->SetVarString('LastResponse', (string)$msg); }
+    // ---------------- Variable setters ----------------
+
+    private function SetConnected($state)  { $this->SetVarBoolean('Connected', (bool)$state); }
+    private function SetLastError($msg)    { $this->SetVarString('LastError', (string)$msg); }
+    private function SetLastResponse($msg) { $this->SetVarString('LastResponse', (string)$msg); }
 
     private function SetVarBoolean($ident, $val)
     {
         $id = @$this->GetIDForIdent($ident);
-        if ($id) SetValueBoolean($id, (bool)$val);
+        if ($id === 0 || $id === false) return;
+        SetValueBoolean($id, (bool)$val);
     }
+
     private function SetVarInt($ident, $val)
     {
         $id = @$this->GetIDForIdent($ident);
-        if ($id) SetValueInteger($id, (int)$val);
+        if ($id === 0 || $id === false) return;
+        SetValueInteger($id, (int)$val);
     }
+
     private function SetVarFloat($ident, $val)
     {
         $id = @$this->GetIDForIdent($ident);
-        if ($id) SetValueFloat($id, (float)$val);
+        if ($id === 0 || $id === false) return;
+        SetValueFloat($id, (float)$val);
     }
+
     private function SetVarString($ident, $val)
     {
         $id = @$this->GetIDForIdent($ident);
-        if ($id) SetValueString($id, (string)$val);
+        if ($id === 0 || $id === false) return;
+        SetValueString($id, (string)$val);
     }
 }
