@@ -1,27 +1,12 @@
 {
-  "id": "{3BF3F3EA-0860-4044-8820-91B35E84F258}",
-  "author": "Johannes",
-  "name": "Dreame Vacuum",
-  "url": "https://github.com/<deinuser>/<deinrepo>",
-  "compatibility": {
-    "version": "7.0"
-  },
-  "version": "1.0",
-  "build": 1,
-  "date": 20251222,
-  "modules": [
-    {
-      "id": "{DEIN-MODUL-GUID}",
-      "name": "Dreame Vacuum",
-      "type": 3,
-      "vendor": "Dreame",
-      "aliases": [
-        "Dreame Vacuum"
-      ],
-      "parentRequirements": [],
-      "childRequirements": [],
-      "implemented": [],
-      "prefix": "DRMV"
-    }
-  ]
+    "id": "{7C5EAD3D-9EAB-4C5B-9B37-1D4C2E2F6D11}",
+    "author": "Johannes + ChatGPT",
+    "name": "Dreame Vacuum",
+    "url": "https://github.com/<DEIN_USER>/<DEIN_REPO>",
+    "compatibility": {
+        "version": "8.0"
+    },
+    "version": "0.10.4.2",
+    "build": 17,
+    "date": 20251223
 }
