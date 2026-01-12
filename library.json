@@ -1,0 +1,12 @@
+{
+    "id": "{7C5EAD3D-9EAB-4C5B-9B37-1D4C2E2F6D11}",
+    "author": "Johannes + ChatGPT",
+    "name": "Dreame Vacuum",
+    "url": "https://github.com/<DEIN_USER>/<DEIN_REPO>",
+    "compatibility": {
+        "version": "8.0"
+    },
+    "version": "0.10.9.1",
+    "build": 25,
+    "date": 20260111
+}
