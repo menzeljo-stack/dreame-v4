@@ -408,7 +408,15 @@ class DreameVacuum extends IPSModule
             foreach ($allResults as $item) {
                 if (!is_array($item)) continue;
                 if (!isset($item['siid']) || !isset($item['piid'])) continue;
-                if (isset($item['code']) && (int)$item['code'] !== 0) continue;
+                if (isset($item['code']) && (int)$item['code'] !== 0) {
+                    // Stream status (10001-1) may be unavailable and returns code != 0
+                    $si = (int)$item['siid'];
+                    $pi = (int)$item['piid'];
+                    if ($si === 10001 && $pi === 1) {
+                        $this->SetVarInt('StreamStatus', -1);
+                    }
+                    continue;
+                }
                 if (!array_key_exists('value', $item)) continue;
 
                 $siid = (int)$item['siid'];
@@ -421,6 +429,7 @@ class DreameVacuum extends IPSModule
                         $code = (int)$val;
                         $this->SetVarInt('DeviceStatus', $code);
                         $this->SetVarInt('OperatingState', $code);
+                        $this->SetVarInt('State', $code);
                         $this->SetVarString('OperatingStateText', $this->GetStatusText($code));
                         if ($this->ReadPropertyBoolean('EnableDerivedTaskTracking')) $this->UpdateTaskState($code);
                         break;
@@ -447,6 +456,15 @@ class DreameVacuum extends IPSModule
                     case '10-2': $this->SetVarInt('SideBrushLife', (int)$val); break;
                     case '11-1': $this->SetVarInt('FilterLife', (int)$val); break;
                     case '11-2': $this->SetVarInt('FilterLeftTime', (int)$val); break;
+
+
+                    // --- HA-like status properties (fixed MIoT keys) ---
+                    case '4-1':  $this->SetVarInt('Status2', (int)$val); break;     // Status
+                    case '4-7':  $this->SetVarInt('TaskStatus', (int)$val); break;  // Task Status
+                    case '4-58': $this->SetVarInt('TaskType', (int)$val); break;    // Task Type
+                    case '4-20': $this->SetVarInt('RelocationStatus', (int)$val); break;
+                    case '4-25': $this->SetVarInt('SelfWashBaseStatus', (int)$val); break;
+                    case '4-53': $this->SetVarBoolean('MopPadInstalled', (bool)$val); break;
 
                     case '4-48':
                         $this->SetVarString('ShortcutsRaw', (string)$val);
@@ -570,7 +588,15 @@ class DreameVacuum extends IPSModule
         foreach ($res as $item) {
             if (!is_array($item)) continue;
             if (!isset($item['siid']) || !isset($item['piid'])) continue;
-            if (isset($item['code']) && (int)$item['code'] !== 0) continue;
+            if (isset($item['code']) && (int)$item['code'] !== 0) {
+                    // Stream status (10001-1) may be unavailable and returns code != 0
+                    $si = (int)$item['siid'];
+                    $pi = (int)$item['piid'];
+                    if ($si === 10001 && $pi === 1) {
+                        $this->SetVarInt('StreamStatus', -1);
+                    }
+                    continue;
+                }
             if (!array_key_exists('value', $item)) continue;
 
             $val = $item['value'];
