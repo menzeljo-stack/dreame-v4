@@ -369,17 +369,23 @@ class DreameVacuum extends IPSModule
 
 
 
-            $payload = array();
+            $payloadAll = array();
             foreach ($props as $p) {
-                $payload[] = array('did' => $this->GetDID(), 'siid' => (int)$p['siid'], 'piid' => (int)$p['piid']);
+                $payloadAll[] = array('did' => $this->GetDID(), 'siid' => (int)$p['siid'], 'piid' => (int)$p['piid']);
             }
 
-            $result = $this->SendCommand('get_properties', $payload);
-            $this->SetLastResponse(json_encode($result));
+            // Dreame/MIoT often limits get_properties payload/response size. Home Assistant chunks to 15.
+            $allResults = array();
+            $chunks = array_chunk($payloadAll, 15);
+            foreach ($chunks as $chunk) {
+                $result = $this->SendCommand('get_properties', $chunk);
+                if (!is_array($result)) throw new Exception('Unerwartete Antwort bei get_properties');
+                $allResults = array_merge($allResults, $result);
+            }
 
-            if (!is_array($result)) throw new Exception('Unerwartete Antwort bei get_properties');
+            $this->SetLastResponse(json_encode($allResults));
 
-            foreach ($result as $item) {
+            foreach ($allResults as $item) {
                 if (!is_array($item)) continue;
                 if (!isset($item['siid']) || !isset($item['piid'])) continue;
                 if (isset($item['code']) && (int)$item['code'] !== 0) continue;

@@ -68,30 +68,6 @@
             "caption": "Variablen automatisch anlegen"
         },
         {
-            "type": "Label",
-            "caption": "Station / Tanks: Diese Werte musst du einmal per Scan ermitteln (siid-piid)."
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "CleanWaterKey",
-            "caption": "Frischwasser leer Key (siid-piid, z.B. 16-3)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "CleanWaterAlertValues",
-            "caption": "Frischwasser Alert Werte (CSV, z.B. 1 oder 2,3)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "DirtyWaterKey",
-            "caption": "Schmutzwasser voll Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "DirtyWaterAlertValues",
-            "caption": "Schmutzwasser Alert Werte (CSV)"
-        },
-        {
             "type": "NumberSpinner",
             "name": "StatusPollInterval",
             "caption": "Status Polling (Sek.)",
@@ -113,59 +89,6 @@
         {
             "type": "Label",
             "label": "Visualisierung: \n• Command-Variable: Start/Pause/Stop/Zur Station/Spot/Beep.\n• Shortcuts: (A) Auswahl + separater Start-Button, und (B) pro Shortcut ein eigener Schalter.\nHinweis: Shortcuts werden bei „Shortcuts laden“ automatisch als Variablen angelegt."
-        },
-        {
-            "type": "Label",
-            "caption": "Tipp: Wasser-Tank leer herausfinden: Starte den Scan, wenn die App 'Wasser leer' meldet. Vergleiche ScanResultText/JSON mit einem Scan nach dem Auffüllen. Die Zeile(n) die sich ändern (siid-piid) bauen wir danach als eigene Variable ein."
-        },
-        {
-            "type": "Label",
-            "caption": "Weitere wichtige Werte (wie in Home Assistant): die Keys sind bereits passend vorbelegt und werden auch als Fallback genutzt, falls Felder leer sind."
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "MopPadKey",
-            "caption": "Mop Pad Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "RelocationStatusKey",
-            "caption": "Relocation Status Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "SelfWashBaseStatusKey",
-            "caption": "Self-Wash Base Status Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "StateKey",
-            "caption": "State Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "StatusKey",
-            "caption": "Status Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "StreamStatusKey",
-            "caption": "Stream Status Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "TaskStatusKey",
-            "caption": "Task Status Key (siid-piid)"
-        },
-        {
-            "type": "ValidationTextBox",
-            "name": "TaskTypeKey",
-            "caption": "Task Type Key (siid-piid)"
-        },
-        {
-            "type": "CheckBox",
-            "name": "EnableDerivedTaskTracking",
-            "caption": "Abgeleiteten Task-Tracker aktivieren (nicht empfohlen)"
         }
     ],
     "actions": [
