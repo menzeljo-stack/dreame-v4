@@ -312,14 +312,14 @@ class DreameVacuum extends IPSModule
             $cwAlerts = $this->ParseAlertValues($this->ReadPropertyString('CleanWaterAlertValues'));
             $dwAlerts = $this->ParseAlertValues($this->ReadPropertyString('DirtyWaterAlertValues'));
 
-            $mopPadKeyStr = trim($this->ReadPropertyString('MopPadKey'));
-            $relocKeyStr = trim($this->ReadPropertyString('RelocationStatusKey'));
-            $selfWashKeyStr = trim($this->ReadPropertyString('SelfWashBaseStatusKey'));
-            $stateKeyStr = trim($this->ReadPropertyString('StateKey'));
-            $statusKeyStr = trim($this->ReadPropertyString('StatusKey'));
-            $streamKeyStr = trim($this->ReadPropertyString('StreamStatusKey'));
-            $taskStatusKeyStr = trim($this->ReadPropertyString('TaskStatusKey'));
-            $taskTypeKeyStr = trim($this->ReadPropertyString('TaskTypeKey'));
+            $mopPadKeyStr = $this->ReadKeyOrDefault('MopPadKey', '4-53');
+            $relocKeyStr = $this->ReadKeyOrDefault('RelocationStatusKey', '4-20');
+            $selfWashKeyStr = $this->ReadKeyOrDefault('SelfWashBaseStatusKey', '4-25');
+            $stateKeyStr = $this->ReadKeyOrDefault('StateKey', '2-1');
+            $statusKeyStr = $this->ReadKeyOrDefault('StatusKey', '4-1');
+            $streamKeyStr = $this->ReadKeyOrDefault('StreamStatusKey', '10001-1');
+            $taskStatusKeyStr = $this->ReadKeyOrDefault('TaskStatusKey', '4-7');
+            $taskTypeKeyStr = $this->ReadKeyOrDefault('TaskTypeKey', '4-58');
 
             $taskStatusMap = $this->ReadPropertyString('TaskStatusMapJson');
             $streamStatusMap = $this->ReadPropertyString('StreamStatusMapJson');
@@ -1057,6 +1057,14 @@ $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~
         return null;
     }
 
+
+    private function ReadKeyOrDefault($propertyName, $default)
+    {
+        $v = trim($this->ReadPropertyString($propertyName));
+        if ($v === '') return $default;
+        return $v;
+    }
+
 // ---------------- Station / Tanks helpers ----------------
 
     private function ParseKey($key)
@@ -1281,7 +1289,7 @@ $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~
             IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
         }
         foreach ($associations as $value => $text) {
-            IPS_SetVariableProfileAssociation($name, (int)$value, (string)$text, '', -1);
+            IPS_SetVariableProfileAssociation($name, (int)$value, (string)$text, '', 0);
         }
     }
 

@@ -120,7 +120,7 @@
         },
         {
             "type": "Label",
-            "caption": "Weitere wichtige Werte (wie in Home Assistant): Keys sind automatisch passend vorbelegt (aus HACS types.py). Du kannst sie bei Bedarf anpassen."
+            "caption": "Weitere wichtige Werte (wie in Home Assistant): die Keys sind bereits passend vorbelegt und werden auch als Fallback genutzt, falls Felder leer sind."
         },
         {
             "type": "ValidationTextBox",
