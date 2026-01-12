@@ -299,6 +299,26 @@ class DreameVacuum extends IPSModule
         $this->SetTimerInterval('PostCommandTimer', (int)$ms);
     }
 
+
+    // Default property keys from Home Assistant HACS 'types.py' mapping (override via Expert properties if needed)
+    private function DefaultKey($propertyName, $currentValue)
+    {
+        $v = trim((string)$currentValue);
+        if ($v !== '') return $v;
+
+        switch ($propertyName) {
+            case 'MopPadKey': return '4-53';
+            case 'RelocationStatusKey': return '4-20';
+            case 'SelfWashBaseStatusKey': return '4-25';
+            case 'StateKey': return '2-1';
+            case 'StatusKey': return '4-1';
+            case 'StreamStatusKey': return '10001-1';
+            case 'TaskStatusKey': return '4-7';
+            case 'TaskTypeKey': return '4-58';
+            default: return '';
+        }
+    }
+
     public function UpdateStatus()
     {
         $this->SetLastError('');
