@@ -95,6 +95,11 @@ class DreameVacuum extends IPSModule
         $this->RegisterPropertyInteger('StatusPollInterval', 60);
         $this->RegisterPropertyInteger('DeviceInfoPollInterval', 3600);
         $this->RegisterPropertyBoolean('AutoUpdateDeviceInfo', true);
+        // Map rendering (optional)
+        $this->RegisterPropertyBoolean('EnableMap', false);
+        $this->RegisterPropertyInteger('MapScale', 2);
+        $this->RegisterPropertyInteger('MapRefreshInterval', 30);
+        $this->RegisterPropertyString('MapIv', '');
 
         // Debug vars
         $this->MaintainVariable('Connected', 'Connected', VARIABLETYPE_BOOLEAN, '~Switch', 1, true);
@@ -103,6 +108,7 @@ class DreameVacuum extends IPSModule
 
         $this->RegisterTimer('StatusTimer', 0, 'DRMV_UpdateStatus($_IPS["TARGET"]);');
         $this->RegisterTimer('DeviceInfoTimer', 0, 'DRMV_UpdateDeviceInfo($_IPS["TARGET"]);');
+        $this->RegisterTimer('UpdateMap', 0, "DRMV_UpdateMap($_IPS['TARGET']);");
 
         // one-shot refresh after any command (to catch delayed mode/status updates)
         $this->RegisterTimer('PostCommandTimer', 0, 'DRMV_PostCommandRefresh($_IPS["TARGET"]);');
@@ -122,6 +128,21 @@ class DreameVacuum extends IPSModule
             $infoInterval = (int)$this->ReadPropertyInteger('DeviceInfoPollInterval');
             if ($infoInterval < 60) $infoInterval = 60;
             $this->SetTimerInterval('DeviceInfoTimer', $infoInterval * 1000);
+
+        // Map timer
+        if ($this->ReadPropertyBoolean('EnableMap')) {
+            $mi = (int)$this->ReadPropertyInteger('MapRefreshInterval');
+            if ($mi <= 0) {
+                $this->SetTimerInterval('UpdateMap', 0);
+            } else {
+                if ($mi < 10) $mi = 10;
+                if ($mi > 600) $mi = 600;
+                $this->SetTimerInterval('UpdateMap', $mi * 1000);
+            }
+        } else {
+            $this->SetTimerInterval('UpdateMap', 0);
+        }
+
         } else {
             $this->SetTimerInterval('DeviceInfoTimer', 0);
         }
@@ -1621,6 +1642,180 @@ $this->MaintainVariable('LastUpdate', 'Letztes Update', VARIABLETYPE_INTEGER, '~
         if ($decoded === null) return array('_http_status' => $code, '_raw' => $resp);
         $decoded['_http_status'] = $code;
         return $decoded;
+    }
+
+    public function UpdateMap()
+    {
+        if (!$this->ReadPropertyBoolean('EnableMap')) {
+            // Map feature not enabled, but allow manual call without throwing
+            return;
+        }
+
+        $this->SetLastError('');
+        try {
+            if (!function_exists('imagecreatetruecolor')) {
+                throw new Exception('PHP GD Erweiterung fehlt (imagecreatetruecolor). Karte kann nicht gerendert werden.');
+            }
+
+            $this->EnsureLoggedIn(false);
+
+            $did = $this->GetDID();
+            if ($did === '') throw new Exception('DID fehlt');
+
+            // Query MAP_DATA (siid=6 piid=1)
+            $payload = array(array('did' => $did, 'siid' => 6, 'piid' => 1));
+            $res = $this->SendCommand('get_properties', $payload);
+            if (!is_array($res) || count($res) < 1) throw new Exception('Unerwartete Antwort bei MAP_DATA');
+
+            $item = $res[0];
+            if (!is_array($item) || (int)($item['code'] ?? -1) !== 0 || !array_key_exists('value', $item)) {
+                throw new Exception('MAP_DATA nicht verfügbar (code ' . (string)($item['code'] ?? '?') . ')');
+            }
+
+            $rawMapData = (string)$item['value'];
+            if ($rawMapData === '') throw new Exception('MAP_DATA ist leer');
+
+            $scale = (int)$this->ReadPropertyInteger('MapScale');
+            if ($scale < 1) $scale = 1;
+            if ($scale > 6) $scale = 6;
+
+            $png = $this->RenderMapFromMapData($rawMapData, $scale);
+
+            $mid = $this->EnsureMapMedia();
+            IPS_SetMediaContent($mid, base64_encode($png));
+            IPS_SendMediaEvent($mid);
+
+            $this->SetBuffer('MapLastUpdate', (string)time());
+            $this->SetLastError('Karte ok');
+        } catch (Exception $e) {
+            $this->SetLastError('Map: ' . $e->getMessage());
+        }
+    }
+
+    private function RenderMapFromMapData($rawMapData, $scale)
+    {
+        // MAP_DATA is usually url-safe base64; sometimes "base64,key"
+        $key = null;
+        $dataPart = $rawMapData;
+        if (strpos($rawMapData, ',') !== false) {
+            $parts = explode(',', $rawMapData, 2);
+            $dataPart = $parts[0];
+            $key = trim($parts[1]);
+        }
+
+        $dataPart = str_replace(array('-', '_'), array('+', '/'), $dataPart);
+        $raw = base64_decode($dataPart, true);
+        if ($raw === false) throw new Exception('MAP_DATA base64 ungültig');
+
+        // Optional decrypt (AES-256-CBC) if key is present
+        if ($key !== null && $key !== '') {
+            $iv = (string)$this->ReadPropertyString('MapIv');
+            if ($iv === '') {
+                throw new Exception('MAP_DATA ist verschlüsselt. Bitte MapIv (16 Zeichen) hinterlegen.');
+            }
+            if (strlen($iv) !== 16) {
+                throw new Exception('MapIv muss 16 Zeichen lang sein');
+            }
+
+            $sha = hash('sha256', $key);              // hex
+            $aesKey = substr($sha, 0, 32);            // 32 bytes ASCII like HA implementation
+            $dec = openssl_decrypt($raw, 'AES-256-CBC', $aesKey, OPENSSL_RAW_DATA, $iv);
+            if ($dec === false) {
+                throw new Exception('MAP_DATA Entschlüsselung fehlgeschlagen');
+            }
+            $raw = $dec;
+        }
+
+        // zlib decompress
+        $unzipped = @gzuncompress($raw);
+        if ($unzipped !== false) {
+            $raw = $unzipped;
+        }
+
+        if (strlen($raw) < 27) throw new Exception('MAP_DATA zu kurz');
+
+        $width  = $this->ReadUInt16LE($raw, 19);
+        $height = $this->ReadUInt16LE($raw, 21);
+
+        if ($width <= 0 || $height <= 0) throw new Exception('Ungültige Kartengröße: ' . $width . 'x' . $height);
+
+        $imageSize = 27 + ($width * $height);
+        if (strlen($raw) < $imageSize) {
+            throw new Exception('MAP_DATA unvollständig (expected ' . $imageSize . ' bytes, got ' . strlen($raw) . ')');
+        }
+
+        $pixels = substr($raw, 27, $width * $height);
+
+        $img = imagecreatetruecolor($width, $height);
+        imagealphablending($img, true);
+        imagesavealpha($img, false);
+
+        // Pre-allocate colors for common pixel types
+        $colorCache = array();
+
+        // MapPixelType values (from dreame-vacuum types.py)
+        $special = array(
+            0   => array(255, 255, 255), // OUTSIDE
+            2   => array(0, 0, 0),       // WIFI_WALL
+            10  => array(210, 210, 255), // WIFI_UNREACHED
+            11  => array(180, 180, 255), // WIFI_POOR
+            12  => array(140, 140, 255), // WIFI_LOW
+            13  => array(100, 100, 255), // WIFI_HIGH
+            14  => array(60, 60, 255),   // WIFI_EXCELLENT
+            249 => array(210, 255, 210), // CLEAN_AREA
+            250 => array(255, 230, 180), // DIRTY_AREA
+            251 => array(80, 80, 80),    // OBSTACLE_WALL
+            252 => array(255, 255, 255), // UNKNOWN
+            253 => array(200, 200, 200), // NEW_SEGMENT
+            254 => array(235, 235, 235), // FLOOR
+            255 => array(20, 20, 20),    // WALL
+        );
+
+        $idx = 0;
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                $v = ord($pixels[$idx]);
+                $idx++;
+
+                if (!isset($colorCache[$v])) {
+                    if (isset($special[$v])) {
+                        $rgb = $special[$v];
+                    } else {
+                        // Segment ids (1..248): deterministic pseudo color
+                        $r = 80 + (($v * 53) % 160);
+                        $g = 80 + (($v * 97) % 160);
+                        $b = 80 + (($v * 131) % 160);
+                        $rgb = array($r, $g, $b);
+                    }
+                    $colorCache[$v] = imagecolorallocate($img, $rgb[0], $rgb[1], $rgb[2]);
+                }
+
+                imagesetpixel($img, $x, $y, $colorCache[$v]);
+            }
+        }
+
+        if ($scale > 1) {
+            $scaled = imagescale($img, $width * $scale, $height * $scale, IMG_NEAREST_NEIGHBOUR);
+            if ($scaled !== false) {
+                imagedestroy($img);
+                $img = $scaled;
+            }
+        }
+
+        ob_start();
+        imagepng($img);
+        $png = ob_get_clean();
+        imagedestroy($img);
+
+        if ($png === false || $png === '') throw new Exception('PNG Rendering fehlgeschlagen');
+        return $png;
+    }
+
+    private function ReadUInt16LE($bytes, $offset)
+    {
+        $part = substr($bytes, $offset, 2);
+        $arr = unpack('v', $part);
+        return (int)$arr[1];
     }
 
     // ---------------- Variable setters ----------------
