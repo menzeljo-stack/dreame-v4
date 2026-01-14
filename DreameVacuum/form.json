@@ -44,6 +44,11 @@
         },
         {
             "type": "ValidationTextBox",
+            "name": "AuthKey",
+            "caption": "auth_key (JWT aus HA) – empfohlen"
+        },
+        {
+            "type": "ValidationTextBox",
             "name": "RefreshToken",
             "caption": "Refresh Token (optional; nur wenn du wirklich einen hast)"
         },
@@ -84,41 +89,6 @@
         {
             "type": "Label",
             "label": "Visualisierung: \n• Command-Variable: Start/Pause/Stop/Zur Station/Spot/Beep.\n• Shortcuts: (A) Auswahl + separater Start-Button, und (B) pro Shortcut ein eigener Schalter.\nHinweis: Shortcuts werden bei „Shortcuts laden“ automatisch als Variablen angelegt."
-        },
-        {
-            "type": "ExpansionPanel",
-            "caption": "Karte",
-            "items": [
-                {
-                    "type": "CheckBox",
-                    "name": "EnableMap",
-                    "caption": "Karte aktivieren"
-                },
-                {
-                    "type": "NumberSpinner",
-                    "name": "MapScale",
-                    "caption": "Skalierung (1-6)",
-                    "minimum": 1,
-                    "maximum": 6
-                },
-                {
-                    "type": "NumberSpinner",
-                    "name": "MapRefreshInterval",
-                    "caption": "Auto-Refresh (Sekunden, 0=aus)",
-                    "minimum": 0,
-                    "maximum": 600
-                },
-                {
-                    "type": "ValidationTextBox",
-                    "name": "MapIv",
-                    "caption": "MapIv (16 Zeichen, nur falls Karte leer/verschlüsselt)"
-                },
-                {
-                    "type": "Button",
-                    "caption": "Karte aktualisieren",
-                    "onClick": "DRMV_UpdateMap($id);"
-                }
-            ]
         }
     ],
     "actions": [

@@ -1,13 +1,13 @@
 {
     "id": "{7C5EAD3D-9EAB-4C5B-9B37-1D4C2E2F6D11}",
-    "author": "Johannes + ChatGPT",
+    "author": "menzeljo-stack",
     "name": "Dreame Vacuum",
     "url": "https://github.com/menzeljo-stack/dreame-v4",
     "compatibility": {
         "version": "8.1"
     },
-    "version": "0.10.10.21",
-    "build": 31,
+    "version": "0.10.9.7-syntaxfix2",
+    "build": 33,
     "date": 20260114,
     "modules": [
         {
